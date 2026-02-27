@@ -3,9 +3,10 @@ import { HeroSection } from "@/components/hero-section";
 import { TrustStatsSection } from "@/components/trust-stats-section";
 import { VerifiedTutorsSection } from "@/components/verified-tutors-section";
 import { FindMatchSection } from "@/components/find-match-section";
-import { LearnFromBestSection } from "@/components/learn-from-best-section";
 import { HowItWorksSection } from "@/components/how-it-works-section";
+import { LearnFromBestSection } from "@/components/learn-from-best-section";
 import { SecurePaymentSection } from "@/components/secure-payment-section";
+import { FAQSection } from "@/components/faq-section";
 
 export default function Home() {
   return (
@@ -19,6 +20,7 @@ export default function Home() {
         <HowItWorksSection />
         <LearnFromBestSection />
         <SecurePaymentSection />
+        <FAQSection />
       </main>
     </>
   );
