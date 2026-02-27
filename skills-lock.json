@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "gsap-greensock": {
+      "source": "dylantarre/animation-principles",
+      "sourceType": "github",
+      "computedHash": "08a5bc6d818dfda5016d37cc0e767c63bbac5372c7cab20cdf4d05209c0af0cc"
+    },
+    "remotion-best-practices": {
+      "source": "remotion-dev/skills",
+      "sourceType": "github",
+      "computedHash": "9851afb52e1b892c43b2af973bda1776ce01fedfdfe704e0cfd70069a3a9c300"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "computedHash": "a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a"
+    }
+  }
+}
