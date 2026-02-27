@@ -40,19 +40,22 @@ const subjectSets = [
 function generateTutors(count: number) {
     const tutors = [];
     for (let i = 0; i < count; i++) {
-        const isMale = Math.random() > 0.5;
+        // Use index to determine gender consistently
+        const isMale = i % 2 === 0;
         const gender = isMale ? "male" : "female";
         const maxImages = isMale ? 32 : 39;
-        const imageNum = Math.floor(Math.random() * maxImages) + 1;
+        // Use index-based selection instead of random for consistent SSR/client rendering
+        const imageNum = (i % maxImages) + 1;
         const names = isMale ? maleNames : femaleNames;
+        const nameIndex = i % names.length;
 
         tutors.push({
-            name: names[Math.floor(Math.random() * names.length)],
+            name: names[nameIndex],
             verified: true,
-            rating: (4.5 + Math.random() * 0.5).toFixed(1),
-            degree: degrees[Math.floor(Math.random() * degrees.length)],
-            price: `₦${(3000 + Math.floor(Math.random() * 3000)).toLocaleString()}`,
-            subjects: subjectSets[Math.floor(Math.random() * subjectSets.length)],
+            rating: (4.5 + ((i % 5) * 0.1)).toFixed(1),
+            degree: degrees[i % degrees.length],
+            price: `₦${(3000 + ((i % 10) * 300)).toLocaleString()}`,
+            subjects: subjectSets[i % subjectSets.length],
             image: `/avatar/${gender}${imageNum}.jpeg`,
         });
     }
