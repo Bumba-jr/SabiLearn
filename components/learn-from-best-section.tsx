@@ -37,25 +37,26 @@ const subjectSets = [
     ["Economics", "Accounting", "WAEC"],
 ];
 
-function generateTutors(count: number) {
+function generateTutors(count: number, startIndex: number = 0) {
     const tutors = [];
     for (let i = 0; i < count; i++) {
-        // Use index to determine gender consistently
-        const isMale = i % 2 === 0;
+        const actualIndex = startIndex + i;
+        // Use actualIndex to determine gender consistently
+        const isMale = actualIndex % 2 === 0;
         const gender = isMale ? "male" : "female";
         const maxImages = isMale ? 32 : 39;
-        // Use index-based selection instead of random for consistent SSR/client rendering
-        const imageNum = (i % maxImages) + 1;
+        // Use actualIndex-based selection instead of i for unique tutors across rows
+        const imageNum = (actualIndex % maxImages) + 1;
         const names = isMale ? maleNames : femaleNames;
-        const nameIndex = i % names.length;
+        const nameIndex = actualIndex % names.length;
 
         tutors.push({
             name: names[nameIndex],
             verified: true,
-            rating: (4.5 + ((i % 5) * 0.1)).toFixed(1),
-            degree: degrees[i % degrees.length],
-            price: `₦${(3000 + ((i % 10) * 300)).toLocaleString()}`,
-            subjects: subjectSets[i % subjectSets.length],
+            rating: (4.5 + ((actualIndex % 5) * 0.1)).toFixed(1),
+            degree: degrees[actualIndex % degrees.length],
+            price: `₦${(3000 + ((actualIndex % 10) * 300)).toLocaleString()}`,
+            subjects: subjectSets[actualIndex % subjectSets.length],
             image: `/avatar/${gender}${imageNum}.jpeg`,
         });
     }
@@ -72,8 +73,10 @@ export function LearnFromBestSection() {
 
     // Generate tutors only once
     if (!tutorsGenerated.current) {
-        topTutorsRef.current = generateTutors(16);
-        bottomTutorsRef.current = generateTutors(16);
+        // Generate 16 tutors for top row (starting from index 0)
+        topTutorsRef.current = generateTutors(16, 0);
+        // Generate 16 different tutors for bottom row (starting from index 16)
+        bottomTutorsRef.current = generateTutors(16, 16);
         tutorsGenerated.current = true;
     }
 

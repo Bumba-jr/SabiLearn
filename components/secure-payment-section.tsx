@@ -2,7 +2,7 @@
 
 import { Lock, CalendarCheck, CreditCard, RefreshCw } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -14,6 +14,16 @@ export function SecurePaymentSection() {
     const card1Ref = useRef<HTMLDivElement>(null);
     const card2Ref = useRef<HTMLDivElement>(null);
     const sectionRef = useRef<HTMLDivElement>(null);
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!sectionRef.current) return;
+        const rect = sectionRef.current.getBoundingClientRect();
+        setMousePosition({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+        });
+    };
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -24,42 +34,96 @@ export function SecurePaymentSection() {
 
         if (!card1 || !card2 || !section) return;
 
-        // Set initial state
-        gsap.set(card1, { rotation: 6, transformOrigin: "center center" });
-        gsap.set(card2, { rotation: -12, transformOrigin: "center center" });
-
-        // Create scroll-triggered animations
-        const tl1 = gsap.timeline({
-            scrollTrigger: {
-                trigger: section,
-                start: "top bottom",
-                end: "bottom top",
-                scrub: 1,
-            }
+        // Set initial state with force3D for better performance
+        gsap.set(card1, {
+            rotation: 6,
+            transformOrigin: "center center",
+            force3D: true
+        });
+        gsap.set(card2, {
+            rotation: -12,
+            transformOrigin: "center center",
+            force3D: true
         });
 
-        const tl2 = gsap.timeline({
-            scrollTrigger: {
-                trigger: section,
-                start: "top bottom",
-                end: "bottom top",
-                scrub: 1,
-            }
-        });
+        // Small delay to ensure DOM is ready
+        const timer = setTimeout(() => {
+            // Create scroll-triggered animations
+            const tl1 = gsap.timeline({
+                scrollTrigger: {
+                    trigger: section,
+                    start: "top bottom",
+                    end: "bottom top",
+                    scrub: 1,
+                    invalidateOnRefresh: true,
+                }
+            });
 
-        tl1.to(card1, { rotation: 366, ease: "none" });
-        tl2.to(card2, { rotation: -372, ease: "none" });
+            const tl2 = gsap.timeline({
+                scrollTrigger: {
+                    trigger: section,
+                    start: "top bottom",
+                    end: "bottom top",
+                    scrub: 1,
+                    invalidateOnRefresh: true,
+                }
+            });
+
+            tl1.to(card1, { rotation: 366, ease: "none" });
+            tl2.to(card2, { rotation: -372, ease: "none" });
+
+            // Refresh ScrollTrigger after setup
+            ScrollTrigger.refresh();
+        }, 100);
 
         return () => {
-            tl1.kill();
-            tl2.kill();
+            clearTimeout(timer);
+            ScrollTrigger.getAll().forEach(trigger => trigger.kill());
         };
     }, []);
 
     return (
-        <section ref={sectionRef} className="relative py-16 md:py-24 px-4 overflow-hidden">
+        <section
+            ref={sectionRef}
+            onMouseMove={handleMouseMove}
+            className="relative py-16 md:py-24 px-4 overflow-hidden"
+        >
             {/* Gradient Background */}
             <div className="absolute inset-0 bg-gradient-to-br from-[#0A2540] via-[#0d3a5c] to-[#1a5c4d]" />
+
+            {/* Grid Pattern */}
+            <div
+                className="absolute inset-0"
+                style={{
+                    backgroundImage: `
+                        linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '50px 50px'
+                }}
+            />
+
+            {/* Interactive Spotlight Effect */}
+            <div
+                className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+                style={{
+                    background: `radial-gradient(350px circle at ${mousePosition.x}px ${mousePosition.y}px, rgba(255, 107, 53, 0.35), transparent 40%)`,
+                }}
+            />
+
+            {/* Brighter Grid Overlay on Hover */}
+            <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                    backgroundImage: `
+                        linear-gradient(to right, rgba(255,255,255,0.4) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255,255,255,0.4) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '50px 50px',
+                    maskImage: `radial-gradient(250px circle at ${mousePosition.x}px ${mousePosition.y}px, black, transparent 60%)`,
+                    WebkitMaskImage: `radial-gradient(250px circle at ${mousePosition.x}px ${mousePosition.y}px, black, transparent 60%)`,
+                }}
+            />
 
             <div className="relative max-w-7xl mx-auto">
                 <div className="grid lg:grid-cols-[60%_40%] gap-3 items-center">
