@@ -2,6 +2,7 @@ import { Header } from "@/components/header";
 import { HeroSection } from "@/components/hero-section";
 import { TrustStatsSection } from "@/components/trust-stats-section";
 import { FindMatchSection } from "@/components/find-match-section";
+import { LearnFromBestSection } from "@/components/learn-from-best-section";
 
 export default function Home() {
   return (
@@ -11,6 +12,7 @@ export default function Home() {
         <HeroSection />
         <TrustStatsSection />
         <FindMatchSection />
+        <LearnFromBestSection />
       </main>
     </>
   );
