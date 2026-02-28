@@ -3,10 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm-run-all --parallel dev:frontend dev:backend",
-    "dev:frontend": "next dev",
-    "dev:backend": "convex dev",
-    "predev": "convex dev --until-success && convex dashboard",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint ."
@@ -14,6 +11,9 @@
   "dependencies": {
     "@clerk/clerk-react": "^5.60.0",
     "@clerk/nextjs": "^6.37.3",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "@supabase/supabase-js": "^2.98.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.31.7",
@@ -23,8 +23,10 @@
     "react": "^19.2.4",
     "react-countup": "^6.5.3",
     "react-dom": "^19.2.4",
+    "react-icons-animated": "^1.0.2",
     "react-intersection-observer": "^10.0.3",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "three": "^0.183.1"
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^1.1.1",
@@ -32,6 +34,7 @@
     "@types/node": "^24.10.11",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.183.1",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.1.6",
     "npm-run-all2": "^8.0.4",

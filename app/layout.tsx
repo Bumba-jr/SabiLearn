@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, Inter } from "next/font/google";
 import "./globals.css";
-import ConvexClientProvider from "@/components/ConvexClientProvider";
+import SupabaseProvider from "@/components/SupabaseProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 
 const outfit = Outfit({
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "SabiLearn - Empower Your Child's Future",
   description: "Connect with top-rated, verified teachers across Nigeria for home or online tutoring.",
   icons: {
-    icon: "/convex.svg",
+    icon: "/favicon.ico",
   },
 };
 
@@ -33,7 +33,7 @@ export default function RootLayout({
         className={`${outfit.variable} ${inter.variable} antialiased`}
       >
         <ClerkProvider dynamic>
-          <ConvexClientProvider>{children}</ConvexClientProvider>
+          <SupabaseProvider>{children}</SupabaseProvider>
         </ClerkProvider>
       </body>
     </html>
