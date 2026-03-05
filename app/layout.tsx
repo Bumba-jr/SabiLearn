@@ -3,6 +3,7 @@ import { Outfit, Inter } from "next/font/google";
 import "./globals.css";
 import SupabaseProvider from "@/components/SupabaseProvider";
 import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "@/components/ui/sonner";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -35,6 +36,7 @@ export default function RootLayout({
         <ClerkProvider dynamic>
           <SupabaseProvider>{children}</SupabaseProvider>
         </ClerkProvider>
+        <Toaster />
       </body>
     </html>
   );

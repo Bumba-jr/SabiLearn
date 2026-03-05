@@ -1,7 +1,39 @@
+'use client';
+
 import { CheckCircle2, Bell, BookOpen, Calendar, ArrowRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
 
 export function HeroSection() {
+    const { isSignedIn } = useUser();
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchUserRole() {
+            if (!isSignedIn) {
+                setIsLoading(false);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/profile');
+                if (response.ok) {
+                    const data = await response.json();
+                    setUserRole(data?.role || null);
+                }
+            } catch (error) {
+                console.error('Failed to fetch user role:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+
+        fetchUserRole();
+    }, [isSignedIn]);
+
     return (
         <section className="relative min-h-[90vh] bg-gradient-to-br from-background via-background to-muted/30 py-16 md:py-24 px-4 overflow-hidden">
             {/* Background decoration */}
@@ -36,13 +68,43 @@ export function HeroSection() {
 
                     {/* CTA Buttons */}
                     <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4 pt-2">
-                        <button className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
-                            Find a Tutor Now
-                            <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
-                        </button>
-                        <button className="bg-white hover:bg-gray-50 text-secondary px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold border-2 border-gray-200 transition-all hover:border-gray-300">
-                            Explore Subjects
-                        </button>
+                        {!isLoading && (
+                            <>
+                                {/* Not signed in - show default buttons */}
+                                {!isSignedIn && (
+                                    <>
+                                        <Link href="/find-tutors" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
+                                            Find a Tutor Now
+                                            <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
+                                        </Link>
+                                        <Link href="/subjects" className="bg-white hover:bg-gray-50 text-secondary px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold border-2 border-gray-200 transition-all hover:border-gray-300">
+                                            Explore Subjects
+                                        </Link>
+                                    </>
+                                )}
+
+                                {/* Tutor - show single button to dashboard */}
+                                {isSignedIn && userRole === 'tutor' && (
+                                    <Link href="/dashboard/tutor" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
+                                        Go to Dashboard
+                                        <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
+                                    </Link>
+                                )}
+
+                                {/* Student/Parent - show find tutor button */}
+                                {isSignedIn && (userRole === 'student' || userRole === 'parent') && (
+                                    <>
+                                        <Link href="/find-tutors" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
+                                            Find a Tutor Now
+                                            <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
+                                        </Link>
+                                        <Link href="/dashboard" className="bg-white hover:bg-gray-50 text-secondary px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold border-2 border-gray-200 transition-all hover:border-gray-300">
+                                            My Dashboard
+                                        </Link>
+                                    </>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     {/* Horizontal Line */}

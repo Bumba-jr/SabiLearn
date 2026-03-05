@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #0051cc;
+        }
+
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+        }
+
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Upload Endpoint Test</h1>
+
+    <div class="info">
+        <strong>Purpose:</strong> Test the upload endpoint with different file sizes to identify the body size limit
+        issue.
+        <br><br>
+        <strong>Instructions:</strong>
+        <ol>
+            <li>Open browser console (F12) to see detailed logs</li>
+            <li>Check terminal for server-side logs</li>
+            <li>Test with progressively larger files</li>
+        </ol>
+    </div>
+
+    <!-- Test 1: GET Request -->
+    <div class="test-section">
+        <h2>Test 1: Route Accessibility (GET)</h2>
+        <p>Tests if the route file is correctly configured and accessible.</p>
+        <button onclick="testGet()">Test GET /api/drafts/upload</button>
+        <div id="get-result"></div>
+    </div>
+
+    <!-- Test 2: Tiny File Upload -->
+    <div class="test-section">
+        <h2>Test 2: Tiny File Upload (< 1KB)</h2>
+                <p>Tests if small files can be uploaded successfully.</p>
+                <button onclick="createTinyFile()">Create & Upload Tiny File</button>
+                <div id="tiny-result"></div>
+    </div>
+
+    <!-- Test 3: Small File Upload -->
+    <div class="test-section">
+        <h2>Test 3: Small File Upload (1-2MB)</h2>
+        <p>Tests if files under typical limits work.</p>
+        <button onclick="createSmallFile()">Create & Upload 1MB File</button>
+        <div id="small-result"></div>
+    </div>
+
+    <!-- Test 4: Medium File Upload -->
+    <div class="test-section">
+        <h2>Test 4: Medium File Upload (5MB)</h2>
+        <p>Tests if files at our validation limit work.</p>
+        <button onclick="createMediumFile()">Create & Upload 5MB File</button>
+        <div id="medium-result"></div>
+    </div>
+
+    <!-- Test 5: Custom File Upload -->
+    <div class="test-section">
+        <h2>Test 5: Custom File Upload</h2>
+        <p>Upload your own file to test.</p>
+        <input type="file" id="custom-file" onchange="uploadCustomFile()">
+        <div id="custom-result"></div>
+    </div>
+
+    <script>
+        // Test 1: GET request
+        async function testGet() {
+            const resultDiv = document.getElementById('get-result');
+            resultDiv.innerHTML = '<div class="result">Testing...</div>';
+
+            try {
+                console.log('Testing GET /api/drafts/upload');
+                const response = await fetch('/api/drafts/upload');
+                const data = await response.json();
+
+                console.log('GET Response:', { status: response.status, data });
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="result success">✅ SUCCESS\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">❌ FAILED\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}</div>`;
+                }
+            } catch (error) {
+                console.error('GET Error:', error);
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\n${error.message}</div>`;
+            }
+        }
+
+        // Helper function to create a file of specific size
+        function createTestFile(sizeInBytes, filename) {
+            const content = new Uint8Array(sizeInBytes);
+            // Fill with random data
+            for (let i = 0; i < sizeInBytes; i++) {
+                content[i] = Math.floor(Math.random() * 256);
+            }
+            return new File([content], filename, { type: 'application/octet-stream' });
+        }
+
+        // Helper function to upload a file
+        async function uploadFile(file, resultDivId) {
+            const resultDiv = document.getElementById(resultDivId);
+            const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+
+            resultDiv.innerHTML = `<div class="result">Uploading ${file.name} (${fileSizeMB} MB)...</div>`;
+
+            console.log(`Uploading file: ${file.name}, Size: ${file.size} bytes (${fileSizeMB} MB)`);
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('fileType', 'degree_certificate');
+                // Use the actual authenticated user ID
+                formData.append('clerkUserId', 'user_3AJ5NfGS73kIkwQGQy4gpYdvarc');
+
+                const startTime = Date.now();
+                const response = await fetch('/api/drafts/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const duration = Date.now() - startTime;
+
+                let data;
+                const responseText = await response.text();
+                console.log('Raw response:', responseText);
+
+                try {
+                    data = responseText ? JSON.parse(responseText) : {};
+                } catch (e) {
+                    data = { raw: responseText };
+                }
+
+                console.log('Upload Response:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data,
+                    duration: `${duration}ms`
+                });
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `<div class="result success">✅ SUCCESS\nFile: ${file.name}\nSize: ${fileSizeMB} MB\nStatus: ${response.status}\nDuration: ${duration}ms\nResponse: ${JSON.stringify(data, null, 2)}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="result error">❌ FAILED\nFile: ${file.name}\nSize: ${fileSizeMB} MB\nStatus: ${response.status}\nDuration: ${duration}ms\nResponse: ${JSON.stringify(data, null, 2)}\n\n⚠️ Check terminal for "📤 Upload route hit" message.\nIf missing, request was rejected by Next.js before reaching handler.</div>`;
+                }
+            } catch (error) {
+                console.error('Upload Error:', error);
+                resultDiv.innerHTML = `<div class="result error">❌ ERROR\nFile: ${file.name}\nSize: ${fileSizeMB} MB\n${error.message}</div>`;
+            }
+        }
+
+        // Test 2: Tiny file
+        function createTinyFile() {
+            const file = createTestFile(500, 'tiny-test.bin'); // 500 bytes
+            uploadFile(file, 'tiny-result');
+        }
+
+        // Test 3: Small file
+        function createSmallFile() {
+            const file = createTestFile(1 * 1024 * 1024, 'small-test.bin'); // 1 MB
+            uploadFile(file, 'small-result');
+        }
+
+        // Test 4: Medium file
+        function createMediumFile() {
+            const file = createTestFile(5 * 1024 * 1024, 'medium-test.bin'); // 5 MB
+            uploadFile(file, 'medium-result');
+        }
+
+        // Test 5: Custom file
+        function uploadCustomFile() {
+            const input = document.getElementById('custom-file');
+            if (input.files && input.files[0]) {
+                uploadFile(input.files[0], 'custom-result');
+            }
+        }
+    </script>
+</body>
+
+</html>

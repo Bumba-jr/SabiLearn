@@ -33,17 +33,56 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
 
 ### 4. Run Database Migrations
 
+#### Migration 001: Initial Schema (✓ Completed)
 1. In your Supabase dashboard, go to SQL Editor
 2. Click "New Query"
 3. Copy the contents of `supabase/migrations/001_initial_schema.sql`
 4. Paste and click "Run"
 
-This will create all the necessary tables:
+This creates the base tables:
 - `tutors` - Tutor profiles and information
 - `students` - Student profiles and information
 - `sessions` - Booking sessions between tutors and students
 - `reviews` - Reviews and ratings for tutors
 - `messages` - In-app messaging between users
+
+#### Migration 002: Authentication & Onboarding Schema
+1. In your Supabase dashboard, go to SQL Editor
+2. Click "New Query"
+3. Copy the contents of `supabase/migrations/002_auth_onboarding_schema.sql`
+4. Paste and click "Run"
+
+This adds authentication and onboarding tables:
+- `profiles` - Central authentication table linking Clerk users to roles
+- `parents` - Parent user profiles
+- `onboarding_progress` - Saves partial onboarding data for resumption
+- Extends `tutors` table with onboarding fields (experience_level, grade_levels, bank details, etc.)
+- Extends `students` table with onboarding fields (subjects_needed, learning_goals, etc.)
+- Adds database triggers for role locking and progress cleanup
+- Updates RLS policies for all tables
+
+#### Migration 003: Draft Storage Setup
+1. Follow the detailed guide in `supabase/DRAFT_STORAGE_SETUP.md`
+2. Create the 'drafts' storage bucket via Supabase Dashboard
+3. Run the migration `supabase/migrations/003_tutor_onboarding_drafts_storage.sql`
+
+This sets up:
+- Private 'drafts' bucket for temporary file uploads during onboarding
+- RLS policies for user-scoped file access
+- 100MB file size limit
+- Automatic cleanup of expired drafts (30 days)
+
+#### Storage Buckets Setup
+After running migrations, create storage buckets:
+
+1. Navigate to Storage in your Supabase dashboard
+2. Click "New bucket"
+3. Create four buckets:
+   - **drafts** (private) - for temporary onboarding file uploads (see Migration 003)
+   - **avatars** (public) - for profile photos
+   - **videos** (public) - for tutor intro videos  
+   - **credentials** (private) - for tutor credentials/certificates
+4. For each bucket, go to Policies and apply the RLS policies from the migrations
 
 ### 5. Configure Authentication (Optional)
 

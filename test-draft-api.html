@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Draft API</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+
+        button {
+            background: #0070f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #0051cc;
+        }
+
+        .success {
+            color: #0070f3;
+        }
+
+        .error {
+            color: #e00;
+        }
+
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+        }
+
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧪 Draft Storage API Tester</h1>
+
+        <div class="section">
+            <h3>Step 1: Get Your Clerk User ID</h3>
+            <p>Open your browser console and run:</p>
+            <pre>// Copy this into your app's console (localhost:3000)
+import { useUser } from '@clerk/nextjs';
+// Or check the network tab for any API request headers</pre>
+            <input type="text" id="userId" placeholder="Paste your Clerk user ID here"
+                style="width: 100%; padding: 8px; margin: 10px 0;">
+        </div>
+
+        <div class="section">
+            <h3>Step 2: Test Fetch Drafts</h3>
+            <button onclick="testFetchDrafts()">📥 Fetch Drafts</button>
+            <div id="fetchResult"></div>
+        </div>
+
+        <div class="section">
+            <h3>Step 3: Test Upload Draft</h3>
+            <select id="fileType">
+                <option value="profile_photo">Profile Photo</option>
+                <option value="degree_certificate">Degree Certificate</option>
+                <option value="government_id">Government ID</option>
+                <option value="nysc_certificate">NYSC Certificate</option>
+                <option value="intro_video">Intro Video</option>
+            </select>
+            <input type="file" id="fileInput">
+            <button onclick="testUploadDraft()">📤 Upload Draft</button>
+            <div id="uploadResult"></div>
+        </div>
+
+        <div class="section">
+            <h3>Alternative: Get User ID from Current Session</h3>
+            <p>If you're logged in, click this button:</p>
+            <button onclick="getUserIdFromClerk()">🔍 Detect Clerk User ID</button>
+            <div id="userIdResult"></div>
+        </div>
+    </div>
+
+    <script>
+        async function testFetchDrafts() {
+            const userId = document.getElementById('userId').value.trim();
+            const resultDiv = document.getElementById('fetchResult');
+
+            if (!userId) {
+                resultDiv.innerHTML = '<p class="error">❌ Please enter your Clerk user ID first</p>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<p>⏳ Fetching drafts...</p>';
+
+            try {
+                const response = await fetch(`/api/drafts/${userId}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ Success! Status: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <p class="error">❌ Error: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Network error: ${error.message}</p>`;
+            }
+        }
+
+        async function testUploadDraft() {
+            const userId = document.getElementById('userId').value.trim();
+            const fileInput = document.getElementById('fileInput');
+            const fileType = document.getElementById('fileType').value;
+            const resultDiv = document.getElementById('uploadResult');
+
+            if (!userId) {
+                resultDiv.innerHTML = '<p class="error">❌ Please enter your Clerk user ID first</p>';
+                return;
+            }
+
+            if (!fileInput.files || !fileInput.files[0]) {
+                resultDiv.innerHTML = '<p class="error">❌ Please select a file first</p>';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('fileType', fileType);
+            formData.append('clerkUserId', userId);
+
+            resultDiv.innerHTML = '<p>⏳ Uploading...</p>';
+
+            try {
+                const response = await fetch('/api/drafts/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ Upload successful! Status: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <p class="error">❌ Upload failed: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Network error: ${error.message}</p>`;
+            }
+        }
+
+        async function getUserIdFromClerk() {
+            const resultDiv = document.getElementById('userIdResult');
+            resultDiv.innerHTML = '<p>⏳ Checking for Clerk session...</p>';
+
+            try {
+                // Try to get user ID from a profile API call
+                const response = await fetch('/api/profile');
+                const data = await response.json();
+
+                if (response.ok && data.clerkUserId) {
+                    document.getElementById('userId').value = data.clerkUserId;
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ Found your Clerk user ID!</p>
+                        <pre>${data.clerkUserId}</pre>
+                        <p>It's been filled in above. Now try testing the API!</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <p class="error">❌ Could not detect user ID automatically.</p>
+                        <p>Please copy it manually from your app's console:</p>
+                        <pre>// In your app console (localhost:3000), run:
+console.log(window.__clerk_user_id || 'Not found')</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">❌ Error: ${error.message}</p>
+                    <p>Make sure you're running this from localhost:3000</p>
+                `;
+            }
+        }
+    </script>
+</body>
+
+</html>
