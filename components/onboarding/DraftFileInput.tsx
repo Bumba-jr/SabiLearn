@@ -15,7 +15,7 @@ interface DraftFileInputProps {
     draftMetadata?: DraftMetadata | null;
     onChange: (file: File | null) => void;
     onDraftRestore?: (metadata: DraftMetadata) => void;
-    clerkUserId: string;
+    authUserId: string;
 }
 
 export function DraftFileInput({
@@ -28,7 +28,7 @@ export function DraftFileInput({
     draftMetadata,
     onChange,
     onDraftRestore,
-    clerkUserId,
+    authUserId,
 }: DraftFileInputProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
@@ -73,9 +73,9 @@ export function DraftFileInput({
             onChange(file);
 
             // Upload to server
-            await upload(file, clerkUserId);
+            await upload(file, authUserId);
         },
-        [maxSize, onChange, upload, clerkUserId, clearError]
+        [maxSize, onChange, upload, authUserId, clearError]
     );
 
     // Handle drag and drop
@@ -163,20 +163,20 @@ export function DraftFileInput({
 
             {/* Draft restoration UI */}
             {draftMetadata && !value && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-blue-900">
+                            <p className="text-sm font-medium text-orange-900">
                                 Draft found: {draftMetadata.original_filename}
                             </p>
-                            <p className="text-xs text-blue-700">
+                            <p className="text-xs text-orange-700">
                                 Uploaded {new Date(draftMetadata.uploaded_at).toLocaleDateString()}
                             </p>
                         </div>
                         <button
                             type="button"
                             onClick={handleRestoreDraft}
-                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                            className="px-3 py-1 text-sm bg-[#FF6B35] text-white rounded hover:bg-[#FF8C5A] transition-colors"
                         >
                             Restore
                         </button>
@@ -192,9 +192,9 @@ export function DraftFileInput({
                 className={`
                     relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer
                     transition-colors
-                    ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+                    ${isDragging ? 'border-[#FF6B35] bg-orange-50' : 'border-gray-300 hover:border-gray-400'}
                     ${isUploading ? 'opacity-50 pointer-events-none' : ''}
-                    ${value ? 'border-green-500 bg-green-50' : ''}
+                    ${value ? 'border-green-500 bg-green-50/50' : ''}
                 `}
                 onClick={() => !value && fileInputRef.current?.click()}
             >
@@ -211,24 +211,26 @@ export function DraftFileInput({
                         <p className="text-sm text-gray-600">Uploading...</p>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
-                                className="bg-blue-600 h-2 rounded-full transition-all"
+                                className="bg-[#FF6B35] h-2 rounded-full transition-all"
                                 style={{ width: `${progress}%` }}
                             />
                         </div>
                         <p className="text-xs text-gray-500">{progress}%</p>
                     </div>
                 ) : value ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         <div className="flex items-center justify-center gap-2 text-green-600">
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                             </svg>
-                            <p className="text-sm font-medium">File selected</p>
+                            <p className="text-sm font-semibold">File selected</p>
                         </div>
-                        <p className="text-sm text-gray-700 font-medium">{value.name}</p>
-                        <p className="text-xs text-gray-500">
-                            {(value.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
+                        <div className="bg-white/80 backdrop-blur-sm border border-green-200 rounded-lg p-4 max-w-md mx-auto">
+                            <p className="text-sm text-gray-900 font-medium break-all">{value.name}</p>
+                            <p className="text-xs text-gray-600 mt-1">
+                                {(value.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                        </div>
                         <button
                             type="button"
                             onClick={(e) => {
@@ -239,7 +241,7 @@ export function DraftFileInput({
                                     setPreviewUrl(null);
                                 }
                             }}
-                            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+                            className="mt-2 px-4 py-2 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors font-medium"
                         >
                             Remove file
                         </button>
@@ -279,26 +281,6 @@ export function DraftFileInput({
                             Retry
                         </button>
                     </div>
-                </div>
-            )}
-
-            {/* File preview */}
-            {previewUrl && (
-                <div className="mt-2">
-                    {value?.type.startsWith('image/') && (
-                        <img
-                            src={previewUrl}
-                            alt="Preview"
-                            className="max-w-xs max-h-48 rounded-lg border"
-                        />
-                    )}
-                    {value?.type.startsWith('video/') && (
-                        <video
-                            src={previewUrl}
-                            controls
-                            className="max-w-xs max-h-48 rounded-lg border"
-                        />
-                    )}
                 </div>
             )}
         </div>

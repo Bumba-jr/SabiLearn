@@ -19,20 +19,70 @@ export async function uploadDraftFile(
     file: File | Buffer,
     storagePath: string
 ): Promise<string> {
-    const fileBuffer = file instanceof File ? await file.arrayBuffer() : file;
+    console.log('📤 Starting file upload to Supabase Storage');
+    console.log('Storage path:', storagePath);
+    console.log('File size:', file instanceof File ? file.size : file.length);
+    console.log('File type:', file instanceof File ? file.type : 'Buffer');
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log('Has service key:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data, error } = await supabaseAdmin.storage
-        .from(DRAFTS_BUCKET)
-        .upload(storagePath, fileBuffer, {
-            contentType: file instanceof File ? file.type : 'application/octet-stream',
-            upsert: false, // Don't overwrite existing files
-        });
+    try {
+        // Convert File to Buffer for better compatibility
+        let fileBuffer: Buffer;
+        let contentType: string;
 
-    if (error) {
-        throw new Error(`Failed to upload file to storage: ${error.message}`);
+        if (file instanceof File) {
+            console.log('🔄 Converting File to Buffer...');
+            const arrayBuffer = await file.arrayBuffer();
+            fileBuffer = Buffer.from(arrayBuffer);
+            contentType = file.type;
+            console.log('✅ File converted to Buffer, size:', fileBuffer.length);
+        } else {
+            fileBuffer = file;
+            contentType = 'application/octet-stream';
+            console.log('✅ Already a Buffer, size:', fileBuffer.length);
+        }
+
+        console.log('🔄 Attempting upload to Supabase...');
+        console.log('Bucket:', DRAFTS_BUCKET);
+        console.log('Content-Type:', contentType);
+
+        const { data, error } = await supabaseAdmin.storage
+            .from(DRAFTS_BUCKET)
+            .upload(storagePath, fileBuffer, {
+                contentType,
+                upsert: false, // Don't overwrite existing files
+            });
+
+        if (error) {
+            console.error('❌ Supabase storage error:', error);
+            console.error('Error details:', {
+                message: error.message,
+                name: error.name,
+                statusCode: (error as any).statusCode,
+                error: (error as any).error,
+            });
+            throw new Error(`Failed to upload file to storage: ${error.message}`);
+        }
+
+        console.log('✅ Upload successful, path:', data.path);
+        return data.path;
+    } catch (error) {
+        console.error('❌ Upload exception:', error);
+        if (error instanceof Error) {
+            console.error('Error name:', error.name);
+            console.error('Error message:', error.message);
+            console.error('Error stack:', error.stack);
+            console.error('Error cause:', error.cause);
+        }
+
+        // Re-throw with more context
+        if (error instanceof Error && error.message.includes('fetch failed')) {
+            throw new Error(`Network error connecting to Supabase Storage. Please check your internet connection and Supabase configuration. Original error: ${error.message}`);
+        }
+
+        throw error;
     }
-
-    return data.path;
 }
 
 /**

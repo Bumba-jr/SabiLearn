@@ -40,13 +40,13 @@ export async function POST(request: NextRequest) {
                 await deleteDraftFile(draft.storage_path);
 
                 // Delete metadata
-                await deleteDraftMetadata(draft.id, draft.clerk_user_id);
+                await deleteDraftMetadata(draft.id, draft.auth_user_id);
 
                 deletedCount++;
 
                 // Log deletion
                 console.log('Draft deleted:', {
-                    clerk_user_id: draft.clerk_user_id,
+                    user_id: draft.auth_user_id,
                     file_type: draft.file_type,
                     reason: 'expiration',
                     expired_at: draft.expires_at,
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
                 errorCount++;
                 console.error('Failed to delete draft:', {
                     draft_id: draft.id,
-                    clerk_user_id: draft.clerk_user_id,
+                    user_id: draft.auth_user_id,
                     file_type: draft.file_type,
                     error: error instanceof Error ? error.message : 'Unknown error',
                 });

@@ -59,9 +59,14 @@ export const FILE_VALIDATION_RULES: Record<FileType, FileValidationRules> = {
             'image/jpeg',
             'image/png',
             'image/heic',
-            'image/webp'
+            'image/heif',
+            'image/heic-sequence',
+            'image/heif-sequence',
+            'image/webp',
+            'image/gif',
+            'application/octet-stream' // Some browsers send this for HEIC
         ],
-        acceptedExtensions: ['.jpg', '.jpeg', '.png', '.heic', '.webp']
+        acceptedExtensions: ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.gif']
     },
     intro_video: {
         maxSize: 100 * 1024 * 1024, // 100 MB
@@ -155,14 +160,6 @@ export function validateMimeType(
     const rules = FILE_VALIDATION_RULES[fileType];
     const fileName = file.name.toLowerCase();
 
-    // Check if MIME type is accepted
-    if (!rules.acceptedMimeTypes.includes(file.type)) {
-        return {
-            valid: false,
-            error: `Invalid file type. Accepted types for ${fileType}: ${rules.acceptedMimeTypes.join(', ')}`
-        };
-    }
-
     // Check if file extension is accepted
     const hasValidExtension = rules.acceptedExtensions.some(ext =>
         fileName.endsWith(ext.toLowerCase())
@@ -172,6 +169,21 @@ export function validateMimeType(
         return {
             valid: false,
             error: `Invalid file extension. Accepted extensions for ${fileType}: ${rules.acceptedExtensions.join(', ')}`
+        };
+    }
+
+    // For HEIC/HEIF files, be lenient with MIME type since browsers handle it inconsistently
+    if (fileName.endsWith('.heic') || fileName.endsWith('.heif')) {
+        // Accept any MIME type for HEIC files as long as extension is correct
+        // These will be automatically converted to JPEG on the server
+        return { valid: true };
+    }
+
+    // Check if MIME type is accepted
+    if (!rules.acceptedMimeTypes.includes(file.type)) {
+        return {
+            valid: false,
+            error: `Invalid file type. Accepted types for ${fileType}: ${rules.acceptedMimeTypes.join(', ')}`
         };
     }
 

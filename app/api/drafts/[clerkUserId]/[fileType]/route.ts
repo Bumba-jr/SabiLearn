@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getServerUser } from '@/lib/auth/supabase-auth';
 import { getDraftsByUserId, deleteDraftMetadata, type FileType } from '@/lib/db/draft-operations';
 import { deleteDraftFile } from '@/lib/storage/draft-storage';
 
 /**
- * DELETE /api/drafts/[clerkUserId]/[fileType]
+ * DELETE /api/drafts/[userId]/[fileType]
  * Deletes a draft file and its metadata
  * 
  * Response:
@@ -21,11 +21,11 @@ export async function DELETE(
     try {
         // Await params in Next.js 15+
         const params = await context.params;
-        const { clerkUserId, fileType } = params;
+        const { clerkUserId: requestedUserId, fileType } = params;
 
         // Verify authentication
-        const { userId } = await auth();
-        if (!userId) {
+        const user = await getServerUser();
+        if (!user) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401 }
@@ -33,7 +33,7 @@ export async function DELETE(
         }
 
         // Verify user ID matches authenticated user
-        if (clerkUserId !== userId) {
+        if (requestedUserId !== user.id) {
             return NextResponse.json(
                 { error: 'Forbidden: User ID mismatch' },
                 { status: 403 }
@@ -41,7 +41,7 @@ export async function DELETE(
         }
 
         // Find the draft
-        const drafts = await getDraftsByUserId(clerkUserId);
+        const drafts = await getDraftsByUserId(user.id);
         const draft = drafts.find(d => d.file_type === fileType as FileType);
 
         if (!draft) {
@@ -57,7 +57,7 @@ export async function DELETE(
             await deleteDraftFile(draft.storage_path);
 
             // Delete metadata
-            await deleteDraftMetadata(draft.id, clerkUserId);
+            await deleteDraftMetadata(draft.id, user.id);
 
             return NextResponse.json(
                 { message: 'Draft deleted successfully' },

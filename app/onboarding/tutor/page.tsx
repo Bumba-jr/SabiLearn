@@ -2,17 +2,22 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
+import { useAuth } from '@/lib/auth/AuthProvider';
 import { BookOpen, ChevronDown, Check, Search, Plus, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DraftFileInput } from '@/components/onboarding/DraftFileInput';
 import { ProfilePhotoInput } from '@/components/onboarding/ProfilePhotoInput';
+import { SearchableSelect } from '@/components/SearchableSelect';
+import { DatePicker } from '@/components/DatePicker';
+import { supabase } from '@/lib/supabase/client';
+
 import {
     validateDraftsWithServer,
     cleanupStaleDraftReferences,
     clearAllDraftReferences
 } from '@/lib/utils/draft-restoration';
 import { type DraftMetadata, type FileType } from '@/lib/db/draft-operations';
+import gsap from 'gsap';
 
 const SUBJECTS = [
     'Mathematics', 'English', 'Physics', 'Chemistry', 'Biology',
@@ -26,44 +31,150 @@ const GRADE_LEVELS = {
 
 const EXAM_TYPES = ['WAEC', 'JAMB', 'IGCSE', 'Daily Schoolwork'];
 
+const NIGERIAN_BANKS = [
+    { value: 'Access Bank', label: 'Access Bank', logo: 'https://nigerianbanks.xyz/logo/access-bank.png' },
+    { value: 'Access Bank (Diamond)', label: 'Access Bank (Diamond)', logo: 'https://nigerianbanks.xyz/logo/access-bank-diamond.png' },
+    { value: 'ALAT by WEMA', label: 'ALAT by WEMA', logo: 'https://nigerianbanks.xyz/logo/alat-by-wema.png' },
+    { value: 'ASO Savings and Loans', label: 'ASO Savings and Loans', logo: 'https://nigerianbanks.xyz/logo/asosavings.png' },
+    { value: 'Bowen Microfinance Bank', label: 'Bowen Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'CEMCS Microfinance Bank', label: 'CEMCS Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/cemcs-microfinance-bank.png' },
+    { value: 'Citibank Nigeria', label: 'Citibank Nigeria', logo: 'https://nigerianbanks.xyz/logo/citibank-nigeria.png' },
+    { value: 'Ecobank Nigeria', label: 'Ecobank Nigeria', logo: 'https://nigerianbanks.xyz/logo/ecobank-nigeria.png' },
+    { value: 'Ekondo Microfinance Bank', label: 'Ekondo Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/ekondo-microfinance-bank.png' },
+    { value: 'Fidelity Bank', label: 'Fidelity Bank', logo: 'https://nigerianbanks.xyz/logo/fidelity-bank.png' },
+    { value: 'First Bank of Nigeria', label: 'First Bank of Nigeria', logo: 'https://nigerianbanks.xyz/logo/first-bank-of-nigeria.png' },
+    { value: 'First City Monument Bank', label: 'First City Monument Bank', logo: 'https://nigerianbanks.xyz/logo/first-city-monument-bank.png' },
+    { value: 'Globus Bank', label: 'Globus Bank', logo: 'https://nigerianbanks.xyz/logo/globus-bank.png' },
+    { value: 'Guaranty Trust Bank', label: 'Guaranty Trust Bank', logo: 'https://nigerianbanks.xyz/logo/guaranty-trust-bank.png' },
+    { value: 'Heritage Bank', label: 'Heritage Bank', logo: 'https://nigerianbanks.xyz/logo/heritage-bank.png' },
+    { value: 'Jaiz Bank', label: 'Jaiz Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Keystone Bank', label: 'Keystone Bank', logo: 'https://nigerianbanks.xyz/logo/keystone-bank.png' },
+    { value: 'Kuda Bank', label: 'Kuda Bank', logo: 'https://nigerianbanks.xyz/logo/kuda-bank.png' },
+    { value: 'Lotus Bank', label: 'Lotus Bank', logo: 'https://nigerianbanks.xyz/logo/lotus-bank.png' },
+    { value: 'Moniepoint MFB', label: 'Moniepoint MFB', logo: 'https://nigerianbanks.xyz/logo/moniepoint-mfb-ng.png' },
+    { value: 'OPay', label: 'OPay', logo: 'https://nigerianbanks.xyz/logo/paycom.png' },
+    { value: 'Paga', label: 'Paga', logo: 'https://nigerianbanks.xyz/logo/paga.png' },
+    { value: 'PalmPay', label: 'PalmPay', logo: 'https://nigerianbanks.xyz/logo/palmpay.png' },
+    { value: 'Parallex Bank', label: 'Parallex Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Polaris Bank', label: 'Polaris Bank', logo: 'https://nigerianbanks.xyz/logo/polaris-bank.png' },
+    { value: 'Providus Bank', label: 'Providus Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Rubies MFB', label: 'Rubies MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Sparkle Microfinance Bank', label: 'Sparkle Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/sparkle-microfinance-bank.png' },
+    { value: 'Stanbic IBTC Bank', label: 'Stanbic IBTC Bank', logo: 'https://nigerianbanks.xyz/logo/stanbic-ibtc-bank.png' },
+    { value: 'Standard Chartered Bank', label: 'Standard Chartered Bank', logo: 'https://nigerianbanks.xyz/logo/standard-chartered-bank.png' },
+    { value: 'Sterling Bank', label: 'Sterling Bank', logo: 'https://nigerianbanks.xyz/logo/sterling-bank.png' },
+    { value: 'Suntrust Bank', label: 'Suntrust Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'TAJ Bank', label: 'TAJ Bank', logo: 'https://nigerianbanks.xyz/logo/taj-bank.png' },
+    { value: 'TCF MFB', label: 'TCF MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Titan Trust Bank', label: 'Titan Trust Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Union Bank of Nigeria', label: 'Union Bank of Nigeria', logo: 'https://nigerianbanks.xyz/logo/union-bank-of-nigeria.png' },
+    { value: 'United Bank For Africa', label: 'United Bank For Africa', logo: 'https://nigerianbanks.xyz/logo/united-bank-for-africa.png' },
+    { value: 'Unity Bank', label: 'Unity Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'VFD', label: 'VFD', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Wema Bank', label: 'Wema Bank', logo: 'https://nigerianbanks.xyz/logo/wema-bank.png' },
+    { value: 'Zenith Bank', label: 'Zenith Bank', logo: 'https://nigerianbanks.xyz/logo/zenith-bank.png' },
+    // Additional Banks
+    { value: '9mobile 9Payment Service Bank', label: '9mobile 9Payment Service Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Abbey Mortgage Bank', label: 'Abbey Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Above Only MFB', label: 'Above Only MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Accion Microfinance Bank', label: 'Accion Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Ahmadu Bello University Microfinance Bank', label: 'Ahmadu Bello University Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Airtel Smartcash PSB', label: 'Airtel Smartcash PSB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'AKU Microfinance Bank', label: 'AKU Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Amju Unique MFB', label: 'Amju Unique MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Astrapolaris MFB', label: 'Astrapolaris MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Bainescredit MFB', label: 'Bainescredit MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Carbon', label: 'Carbon', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Chanelle Microfinance Bank Limited', label: 'Chanelle Microfinance Bank Limited', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Coronation Merchant Bank', label: 'Coronation Merchant Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Eyowo', label: 'Eyowo', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Fairmoney Microfinance Bank', label: 'Fairmoney Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Firmus MFB', label: 'Firmus MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'FSDH Merchant Bank Limited', label: 'FSDH Merchant Bank Limited', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'GoMoney', label: 'GoMoney', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Greenwich Merchant Bank', label: 'Greenwich Merchant Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Hackman Microfinance Bank', label: 'Hackman Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Hasal Microfinance Bank', label: 'Hasal Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Ibile Microfinance Bank', label: 'Ibile Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Infinity MFB', label: 'Infinity MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Lagos Building Investment Company Plc', label: 'Lagos Building Investment Company Plc', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Links MFB', label: 'Links MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Living Trust Mortgage Bank', label: 'Living Trust Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Mayfair MFB', label: 'Mayfair MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Mint MFB', label: 'Mint MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'MTN Momo PSB', label: 'MTN Momo PSB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Nova Merchant Bank', label: 'Nova Merchant Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Optimus Bank', label: 'Optimus Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Parkway - ReadyCash', label: 'Parkway - ReadyCash', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Paycom', label: 'Paycom', logo: 'https://nigerianbanks.xyz/logo/paycom.png' },
+    { value: 'Petra Microfinance Bank Plc', label: 'Petra Microfinance Bank Plc', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'QuickFund MFB', label: 'QuickFund MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Rand Merchant Bank', label: 'Rand Merchant Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Refuge Mortgage Bank', label: 'Refuge Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Renmoney MFB', label: 'Renmoney MFB', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Brent Mortgage Bank', label: 'Brent Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Cellulant', label: 'Cellulant', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Covenant Microfinance Bank', label: 'Covenant Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Etranzact', label: 'Etranzact', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'FBN Merchant Bank', label: 'FBN Merchant Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Flutterwave', label: 'Flutterwave', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Fortis Microfinance Bank', label: 'Fortis Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Gateway Mortgage Bank', label: 'Gateway Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Haggai Mortgage Bank Limited', label: 'Haggai Mortgage Bank Limited', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Infinity Trust Mortgage Bank', label: 'Infinity Trust Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Interswitch', label: 'Interswitch', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Mutual Trust Microfinance Bank', label: 'Mutual Trust Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'New Prudential Bank', label: 'New Prudential Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'NPF Microfinance Bank', label: 'NPF Microfinance Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'One Finance', label: 'One Finance', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Page MFBank', label: 'Page MFBank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Payattitude Online', label: 'Payattitude Online', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Paystack', label: 'Paystack', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'SafeTrust Mortgage Bank', label: 'SafeTrust Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Tangerine Money', label: 'Tangerine Money', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Titan Paystack', label: 'Titan Paystack', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'Trustbond Mortgage Bank', label: 'Trustbond Mortgage Bank', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+    { value: 'VFD Microfinance Bank Limited', label: 'VFD Microfinance Bank Limited', logo: 'https://nigerianbanks.xyz/logo/default-image.png' },
+];
+
 const NIGERIAN_STATES_WITH_LGAS: Record<string, string[]> = {
-    'Abia': ['Aba North', 'Aba South', 'Arochukwu', 'Bende', 'Ikwuano', 'Isiala Ngwa North', 'Isiala Ngwa South'],
-    'Adamawa': ['Demsa', 'Fufure', 'Ganye', 'Gombi', 'Grie', 'Hong', 'Jada', 'Lamurde'],
-    'Akwa Ibom': ['Abak', 'Eastern Obolo', 'Eket', 'Esit Eket', 'Essien Udim', 'Etim Ekpo'],
-    'Anambra': ['Aguata', 'Anambra East', 'Anambra West', 'Anaocha', 'Awka North', 'Awka South'],
-    'Bauchi': ['Alkaleri', 'Bauchi', 'Bogoro', 'Damban', 'Darazo', 'Dass', 'Gamawa'],
-    'Bayelsa': ['Brass', 'Ekeremor', 'Kolokuma/Opokuma', 'Nembe', 'Ogbia', 'Sagbama'],
-    'Benue': ['Ado', 'Agatu', 'Apa', 'Buruku', 'Gboko', 'Guma', 'Gwer East'],
-    'Borno': ['Abadam', 'Askira/Uba', 'Bama', 'Bayo', 'Biu', 'Chibok', 'Damboa'],
-    'Cross River': ['Abi', 'Akamkpa', 'Akpabuyo', 'Bakassi', 'Bekwarra', 'Biase'],
-    'Delta': ['Aniocha North', 'Aniocha South', 'Bomadi', 'Burutu', 'Ethiope East'],
-    'Ebonyi': ['Abakaliki', 'Afikpo North', 'Afikpo South', 'Ebonyi', 'Ezza North'],
-    'Edo': ['Akoko-Edo', 'Egor', 'Esan Central', 'Esan North-East', 'Esan South-East'],
-    'Ekiti': ['Ado Ekiti', 'Efon', 'Ekiti East', 'Ekiti South-West', 'Ekiti West'],
-    'Enugu': ['Aninri', 'Awgu', 'Enugu East', 'Enugu North', 'Enugu South'],
-    'Gombe': ['Akko', 'Balanga', 'Billiri', 'Dukku', 'Funakaye', 'Gombe'],
-    'Imo': ['Aboh Mbaise', 'Ahiazu Mbaise', 'Ehime Mbano', 'Ezinihitte'],
-    'Jigawa': ['Auyo', 'Babura', 'Biriniwa', 'Birnin Kudu', 'Buji', 'Dutse'],
-    'Kaduna': ['Birnin Gwari', 'Chikun', 'Giwa', 'Igabi', 'Ikara', 'Jaba', 'Jema\'a', 'Kachia', 'Kaduna North', 'Kaduna South', 'Kagarko', 'Kajuru', 'Kaura', 'Kauru', 'Kubau', 'Kudan', 'Lere', 'Makarfi', 'Sabon Gari', 'Sanga', 'Soba', 'Zangon Kataf', 'Zaria'],
-    'Kano': ['Ajingi', 'Albasu', 'Bagwai', 'Bebeji', 'Bichi', 'Bunkure', 'Dala'],
-    'Katsina': ['Bakori', 'Batagarawa', 'Batsari', 'Baure', 'Bindawa'],
-    'Kebbi': ['Aleiro', 'Arewa Dandi', 'Argungu', 'Augie', 'Bagudo'],
-    'Kogi': ['Adavi', 'Ajaokuta', 'Ankpa', 'Bassa', 'Dekina', 'Ibaji'],
-    'Kwara': ['Asa', 'Baruten', 'Edu', 'Ekiti', 'Ifelodun', 'Ilorin East'],
-    'Lagos': ['Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye', 'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere'],
-    'Nasarawa': ['Akwanga', 'Awe', 'Doma', 'Karu', 'Keana', 'Keffi'],
-    'Niger': ['Agaie', 'Agwara', 'Bida', 'Borgu', 'Bosso', 'Chanchaga'],
-    'Ogun': ['Abeokuta North', 'Abeokuta South', 'Ado-Odo/Ota', 'Egbado North'],
-    'Ondo': ['Akoko North-East', 'Akoko North-West', 'Akoko South-West'],
-    'Osun': ['Atakunmosa East', 'Atakunmosa West', 'Aiyedaade', 'Aiyedire'],
-    'Oyo': ['Afijio', 'Akinyele', 'Atiba', 'Atisbo', 'Egbeda', 'Ibadan North'],
-    'Plateau': ['Barkin Ladi', 'Bassa', 'Bokkos', 'Jos East', 'Jos North'],
-    'Rivers': ['Abua/Odual', 'Ahoada East', 'Ahoada West', 'Akuku-Toru'],
-    'Sokoto': ['Binji', 'Bodinga', 'Dange Shuni', 'Gada', 'Goronyo'],
-    'Taraba': ['Ardo Kola', 'Bali', 'Donga', 'Gashaka', 'Gassol'],
-    'Yobe': ['Bade', 'Bursari', 'Damaturu', 'Fika', 'Fune', 'Geidam'],
-    'Zamfara': ['Anka', 'Bakura', 'Birnin Magaji/Kiyaw', 'Bukkuyum'],
-    'FCT': ['Abaji', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali', 'Municipal Area Council']
+    'Abia': ['Aba North', 'Aba South', 'Arochukwu', 'Bende', 'Ikwuano', 'Isiala-Ngwa North', 'Isiala-Ngwa South', 'Isuikwato', 'Obi Nwa', 'Ohafia', 'Osisioma', 'Ngwa', 'Ugwunagbo', 'Ukwa East', 'Ukwa West', 'Umuahia North', 'Umuahia South', 'Umu-Neochi'],
+    'Adamawa': ['Demsa', 'Fufore', 'Ganaye', 'Gireri', 'Gombi', 'Guyuk', 'Hong', 'Jada', 'Lamurde', 'Madagali', 'Maiha', 'Mayo-Belwa', 'Michika', 'Mubi North', 'Mubi South', 'Numan', 'Shelleng', 'Song', 'Toungo', 'Yola North', 'Yola South'],
+    'Akwa Ibom': ['Abak', 'Eastern Obolo', 'Eket', 'Esit Eket', 'Essien Udim', 'Etim Ekpo', 'Etinan', 'Ibeno', 'Ibesikpo Asutan', 'Ibiono Ibom', 'Ika', 'Ikono', 'Ikot Abasi', 'Ikot Ekpene', 'Ini', 'Itu', 'Mbo', 'Mkpat Enin', 'Nsit Atai', 'Nsit Ibom', 'Nsit Ubium', 'Obot Akara', 'Okobo', 'Onna', 'Oron', 'Oruk Anam', 'Udung Uko', 'Ukanafun', 'Uruan', 'Urue-Offong/Oruko', 'Uyo'],
+    'Anambra': ['Aguata', 'Anambra East', 'Anambra West', 'Anaocha', 'Awka North', 'Awka South', 'Ayamelum', 'Dunukofia', 'Ekwusigo', 'Idemili North', 'Idemili South', 'Ihiala', 'Njikoka', 'Nnewi North', 'Nnewi South', 'Ogbaru', 'Onitsha North', 'Onitsha South', 'Orumba North', 'Orumba South', 'Oyi'],
+    'Bauchi': ['Alkaleri', 'Bauchi', 'Bogoro', 'Damban', 'Darazo', 'Dass', 'Ganjuwa', 'Giade', 'Itas/Gadau', 'Jama\'are', 'Katagum', 'Kirfi', 'Misau', 'Ningi', 'Shira', 'Tafawa-Balewa', 'Toro', 'Warji', 'Zaki'],
+    'Bayelsa': ['Brass', 'Ekeremor', 'Kolokuma/Opokuma', 'Nembe', 'Ogbia', 'Sagbama', 'Southern Jaw', 'Yenegoa'],
+    'Benue': ['Ado', 'Agatu', 'Apa', 'Buruku', 'Gboko', 'Guma', 'Gwer East', 'Gwer West', 'Katsina-Ala', 'Konshisha', 'Kwande', 'Logo', 'Makurdi', 'Obi', 'Ogbadibo', 'Oju', 'Okpokwu', 'Ohimini', 'Oturkpo', 'Tarka', 'Ukum', 'Ushongo', 'Vandeikya'],
+    'Borno': ['Abadam', 'Askira/Uba', 'Bama', 'Bayo', 'Biu', 'Chibok', 'Damboa', 'Dikwa', 'Gubio', 'Guzamala', 'Gwoza', 'Hawul', 'Jere', 'Kaga', 'Kala/Balge', 'Konduga', 'Kukawa', 'Kwaya Kusar', 'Mafa', 'Magumeri', 'Maiduguri', 'Marte', 'Mobbar', 'Monguno', 'Ngala', 'Nganzai', 'Shani'],
+    'Cross River': ['Akpabuyo', 'Odukpani', 'Akamkpa', 'Biase', 'Abi', 'Ikom', 'Yarkur', 'Odubra', 'Boki', 'Ogoja', 'Yala', 'Obanliku', 'Obudu', 'Calabar South', 'Etung', 'Bekwara', 'Bakassi', 'Calabar Municipality'],
+    'Delta': ['Oshimili', 'Aniocha', 'Aniocha South', 'Ika South', 'Ika North-East', 'Ndokwa West', 'Ndokwa East', 'Isoko South', 'Isoko North', 'Bomadi', 'Burutu', 'Ughelli South', 'Ughelli North', 'Ethiope West', 'Ethiope East', 'Sapele', 'Okpe', 'Warri North', 'Warri South', 'Uvwie', 'Udu', 'Warri Central', 'Ukwani', 'Oshimili North', 'Patani'],
+    'Ebonyi': ['Edda', 'Afikpo', 'Onicha', 'Ohaozara', 'Abakaliki', 'Ishielu', 'lkwo', 'Ezza', 'Ezza South', 'Ohaukwu', 'Ebonyi', 'Ivo'],
+    'Edo': ['Esan North-East', 'Esan Central', 'Esan West', 'Egor', 'Ukpoba', 'Central', 'Etsako Central', 'Igueben', 'Oredo', 'Ovia SouthWest', 'Ovia South-East', 'Orhionwon', 'Uhunmwonde', 'Etsako East', 'Esan South-East'],
+    'Ekiti': ['Ado', 'Ekiti-East', 'Ekiti-West', 'Emure/Ise/Orun', 'Ekiti South-West', 'Ikere', 'Irepodun', 'Ijero', 'Ido/Osi', 'Oye', 'Ikole', 'Moba', 'Gbonyin', 'Efon', 'Ise/Orun', 'Ilejemeje'],
+    'Enugu': ['Enugu South', 'Igbo-Eze South', 'Enugu North', 'Nkanu', 'Udi Agwu', 'Oji-River', 'Ezeagu', 'IgboEze North', 'Isi-Uzo', 'Nsukka', 'Igbo-Ekiti', 'Uzo-Uwani', 'Enugu East', 'Aninri', 'Nkanu East', 'Udenu'],
+    'FCT': ['Abaji', 'Abuja Municipal', 'Bwari', 'Gwagwalada', 'Kuje', 'Kwali'],
+    'Gombe': ['Akko', 'Balanga', 'Billiri', 'Dukku', 'Kaltungo', 'Kwami', 'Shomgom', 'Funakaye', 'Gombe', 'Nafada/Bajoga', 'Yamaltu/Delta'],
+    'Imo': ['Aboh-Mbaise', 'Ahiazu-Mbaise', 'Ehime-Mbano', 'Ezinihitte', 'Ideato North', 'Ideato South', 'Ihitte/Uboma', 'Ikeduru', 'Isiala Mbano', 'Isu', 'Mbaitoli', 'Ngor-Okpala', 'Njaba', 'Nwangele', 'Nkwerre', 'Obowo', 'Oguta', 'Ohaji/Egbema', 'Okigwe', 'Orlu', 'Orsu', 'Oru East', 'Oru West', 'Owerri-Municipal', 'Owerri North', 'Owerri West'],
+    'Jigawa': ['Auyo', 'Babura', 'Birni Kudu', 'Biriniwa', 'Buji', 'Dutse', 'Gagarawa', 'Garki', 'Gumel', 'Guri', 'Gwaram', 'Gwiwa', 'Hadejia', 'Jahun', 'Kafin Hausa', 'Kaugama Kazaure', 'Kiri Kasamma', 'Kiyawa', 'Maigatari', 'Malam Madori', 'Miga', 'Ringim', 'Roni', 'Sule-Tankarkar', 'Taura', 'Yankwashi'],
+    'Kaduna': ['Birni-Gwari', 'Chikun', 'Giwa', 'Igabi', 'Ikara', 'Jaba', 'Jema\'a', 'Kachia', 'Kaduna North', 'Kaduna South', 'Kagarko', 'Kajuru', 'Kaura', 'Kauru', 'Kubau', 'Kudan', 'Lere', 'Makarfi', 'Sabon-Gari', 'Sanga', 'Soba', 'Zango-Kataf', 'Zaria'],
+    'Kano': ['Ajingi', 'Albasu', 'Bagwai', 'Bebeji', 'Bichi', 'Bunkure', 'Dala', 'Dambatta', 'Dawakin Kudu', 'Dawakin Tofa', 'Doguwa', 'Fagge', 'Gabasawa', 'Garko', 'Garum Mallam', 'Gaya', 'Gezawa', 'Gwale', 'Gwarzo', 'Kabo', 'Kano Municipal', 'Karaye', 'Kibiya', 'Kiru', 'Kumbotso', 'Ghari', 'Kura', 'Madobi', 'Makoda', 'Minjibir', 'Nasarawa', 'Rano', 'Rimin Gado', 'Rogo', 'Shanono', 'Sumaila', 'Takali', 'Tarauni', 'Tofa', 'Tsanyawa', 'Tudun Wada', 'Ungogo', 'Warawa', 'Wudil'],
+    'Katsina': ['Bakori', 'Batagarawa', 'Batsari', 'Baure', 'Bindawa', 'Charanchi', 'Dandume', 'Danja', 'Dan Musa', 'Daura', 'Dutsi', 'Dutsin-Ma', 'Faskari', 'Funtua', 'Ingawa', 'Jibia', 'Kafur', 'Kaita', 'Kankara', 'Kankia', 'Katsina', 'Kurfi', 'Kusada', 'Mai\'Adua', 'Malumfashi', 'Mani', 'Mashi', 'Matazuu', 'Musawa', 'Rimi', 'Sabuwa', 'Safana', 'Sandamu', 'Zango'],
+    'Kebbi': ['Aleiro', 'Arewa-Dandi', 'Argungu', 'Augie', 'Bagudo', 'Birnin Kebbi', 'Bunza', 'Dandi', 'Fakai', 'Gwandu', 'Jega', 'Kalgo', 'Koko/Besse', 'Maiyama', 'Ngaski', 'Sakaba', 'Shanga', 'Suru', 'Wasagu/Danko', 'Yauri', 'Zuru'],
+    'Kogi': ['Adavi', 'Ajaokuta', 'Ankpa', 'Bassa', 'Dekina', 'Ibaji', 'Idah', 'Igalamela-Odolu', 'Ijumu', 'Kabba/Bunu', 'Kogi', 'Lokoja', 'Mopa-Muro', 'Ofu', 'Ogori/Mangongo', 'Okehi', 'Okene', 'Olamabolo', 'Omala', 'Yagba East', 'Yagba West'],
+    'Kwara': ['Asa', 'Baruten', 'Edu', 'Ekiti', 'Ifelodun', 'Ilorin East', 'Ilorin West', 'Irepodun', 'Isin', 'Kaiama', 'Moro', 'Offa', 'Oke-Ero', 'Oyun', 'Pategi'],
+    'Lagos': ['Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa', 'Badagry', 'Epe', 'Eti-Osa', 'Ibeju/Lekki', 'Ifako-Ijaye', 'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere'],
+    'Nasarawa': ['Akwanga', 'Awe', 'Doma', 'Karu', 'Keana', 'Keffi', 'Kokona', 'Lafia', 'Nasarawa', 'Nasarawa-Eggon', 'Obi', 'Toto', 'Wamba'],
+    'Niger': ['Agaie', 'Agwara', 'Bida', 'Borgu', 'Bosso', 'Chanchaga', 'Edati', 'Gbako', 'Gurara', 'Katcha', 'Kontagora', 'Lapai', 'Lavun', 'Magama', 'Mariga', 'Mashegu', 'Mokwa', 'Muya', 'Pailoro', 'Rafi', 'Rijau', 'Shiroro', 'Suleja', 'Tafa', 'Wushishi'],
+    'Ogun': ['Abeokuta North', 'Abeokuta South', 'Ado-Odo/Ota', 'Yewa North', 'Yewa South', 'Ewekoro', 'Ifo', 'Ijebu East', 'Ijebu North', 'Ijebu North East', 'Ijebu Ode', 'Ikenne', 'Imeko-Afon', 'Ipokia', 'Obafemi-Owode', 'Ogun Waterside', 'Odeda', 'Odogbolu', 'Remo North', 'Shagamu'],
+    'Ondo': ['Akoko North East', 'Akoko North West', 'Akoko South Akure East', 'Akoko South West', 'Akure North', 'Akure South', 'Ese-Odo', 'Idanre', 'Ifedore', 'Ilaje', 'Ile-Oluji', 'Okeigbo', 'Irele', 'Odigbo', 'Okitipupa', 'Ondo East', 'Ondo West', 'Ose', 'Owo'],
+    'Osun': ['Aiyedade', 'Aiyedire', 'Atakumosa East', 'Atakumosa West', 'Boluwaduro', 'Boripe', 'Ede North', 'Ede South', 'Egbedore', 'Ejigbo', 'Ife Central', 'Ife East', 'Ife North', 'Ife South', 'Ifedayo', 'Ifelodun', 'Ila', 'Ilesha East', 'Ilesha West', 'Irepodun', 'Irewole', 'Isokan', 'Iwo', 'Obokun', 'Odo-Otin', 'Ola-Oluwa', 'Olorunda', 'Oriade', 'Orolu', 'Osogbo'],
+    'Oyo': ['Afijio', 'Akinyele', 'Atiba', 'Atisbo', 'Egbeda', 'Ibadan Central', 'Ibadan North', 'Ibadan North West', 'Ibadan South East', 'Ibadan South West', 'Ibarapa Central', 'Ibarapa East', 'Ibarapa North', 'Ido', 'Irepo', 'Iseyin', 'Itesiwaju', 'Iwajowa', 'Kajola', 'Lagelu Ogbomosho North', 'Ogbomosho South', 'Ogo Oluwa', 'Olorunsogo', 'Oluyole', 'Ona-Ara', 'Orelope', 'Ori Ire', 'Oyo East', 'Oyo West', 'Saki East', 'Saki West', 'Surulere'],
+    'Plateau': ['Barikin Ladi', 'Bassa', 'Bokkos', 'Jos East', 'Jos North', 'Jos South', 'Kanam', 'Kanke', 'Langtang North', 'Langtang South', 'Mangu', 'Mikang', 'Pankshin', 'Qua\'an Pan', 'Riyom', 'Shendam', 'Wase'],
+    'Rivers': ['Abua/Odual', 'Ahoada East', 'Ahoada West', 'Akuku Toru', 'Andoni', 'Asari-Toru', 'Bonny', 'Degema', 'Emohua', 'Eleme', 'Etche', 'Gokana', 'Ikwerre', 'Khana', 'Obio/Akpor', 'Ogba/Egbema/Ndoni', 'Ogu/Bolo', 'Okrika', 'Omumma', 'Opobo/Nkoro', 'Oyigbo', 'Port-Harcourt', 'Tai'],
+    'Sokoto': ['Binji', 'Bodinga', 'Dange-shnsi', 'Gada', 'Goronyo', 'Gudu', 'Gawabawa', 'Illela', 'Isa', 'Kware', 'Kebbe', 'Rabah', 'Sabon Birni', 'Shagari', 'Silame', 'Sokoto North', 'Sokoto South', 'Tambuwal', 'Tqngaza', 'Tureta', 'Wamako', 'Wurno', 'Yabo'],
+    'Taraba': ['Ardo-kola', 'Bali', 'Donga', 'Gashaka', 'Cassol', 'Ibi', 'Jalingo', 'Karin-Lamido', 'Kurmi', 'Lau', 'Sardauna', 'Takum', 'Ussa', 'Wukari', 'Yorro', 'Zing'],
+    'Yobe': ['Bade', 'Bursari', 'Damaturu', 'Fika', 'Fune', 'Geidam', 'Gujba', 'Gulani', 'Jakusko', 'Karasuwa', 'Karawa', 'Machina', 'Nangere', 'Nguru Potiskum', 'Tarmua', 'Yunusari', 'Yusufari'],
+    'Zamfara': ['Anka', 'Bakura', 'Birnin Magaji', 'Bukkuyum', 'Bungudu', 'Gummi', 'Gusau', 'Kaura Namoda', 'Maradun', 'Maru', 'Shinkafi', 'Talata Mafara', 'Tsafe', 'Zurmi']
 };
 
 interface Ball {
@@ -214,7 +325,7 @@ function BouncingBalls({ isHovered }: { isHovered: boolean }) {
 interface CustomSelectProps {
     value: string;
     onChange: (value: string) => void;
-    options: { value: string; label: string }[];
+    options: { value: string; label: string; logo?: string }[];
     placeholder?: string;
     disabled?: boolean;
     searchable?: boolean;
@@ -242,7 +353,12 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', dis
     return (
         <div ref={dropdownRef} className="relative">
             <button type="button" onClick={() => !disabled && setIsOpen(!isOpen)} disabled={disabled} className={`w-full px-4 py-3 rounded-lg border text-left font-inter transition-all flex items-center justify-between ${disabled ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-white border-gray-300 text-gray-900 hover:border-[#FF6B35] focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 cursor-pointer'} ${isOpen ? 'border-[#FF6B35] ring-2 ring-[#FF6B35]/20' : ''}`}>
-                <span className={selectedOption ? 'text-gray-900' : 'text-gray-400'}>{selectedOption ? selectedOption.label : placeholder}</span>
+                <span className={`flex items-center gap-3 ${selectedOption ? 'text-gray-900' : 'text-gray-400'}`}>
+                    {selectedOption?.logo && (
+                        <img src={selectedOption.logo} alt={selectedOption.label} className="w-6 h-6 object-contain rounded" />
+                    )}
+                    {selectedOption ? selectedOption.label : placeholder}
+                </span>
                 <ChevronDown className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''} ${disabled ? 'text-gray-300' : 'text-gray-400'}`} />
             </button>
             {isOpen && !disabled && (
@@ -257,9 +373,12 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', dis
                     )}
                     <div className="overflow-y-auto max-h-56 py-2">
                         {filteredOptions.length > 0 ? filteredOptions.map((option, index) => (
-                            <button key={option.value} type="button" onClick={() => { onChange(option.value); setIsOpen(false); setSearchQuery(''); }} className={`w-full px-4 py-2.5 text-left font-inter transition-colors flex items-center justify-between ${option.value === value ? 'bg-[#FF6B35]/10 text-[#FF6B35] font-medium' : 'text-gray-700 hover:bg-gray-50'} ${index === filteredOptions.length - 1 ? 'mb-4' : ''}`}>
-                                <span>{option.label}</span>
-                                {option.value === value && <Check className="w-4 h-4 text-[#FF6B35]" />}
+                            <button key={option.value} type="button" onClick={() => { onChange(option.value); setIsOpen(false); setSearchQuery(''); }} className={`w-full px-4 py-2.5 text-left font-inter transition-colors flex items-center gap-3 ${option.value === value ? 'bg-[#FF6B35]/10 text-[#FF6B35] font-medium' : 'text-gray-700 hover:bg-gray-50'} ${index === filteredOptions.length - 1 ? 'mb-4' : ''}`}>
+                                {option.logo && (
+                                    <img src={option.logo} alt={option.label} className="w-6 h-6 object-contain rounded flex-shrink-0" />
+                                )}
+                                <span className="flex-1">{option.label}</span>
+                                {option.value === value && <Check className="w-4 h-4 text-[#FF6B35] flex-shrink-0" />}
                             </button>
                         )) : <div className="px-4 py-3 text-sm text-gray-500 text-center font-inter">No results found</div>}
                     </div>
@@ -271,7 +390,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', dis
 
 export default function TutorOnboardingPage() {
     const router = useRouter();
-    const { user } = useUser();
+    const { user } = useAuth();
     const [step, setStep] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -291,6 +410,9 @@ export default function TutorOnboardingPage() {
     const liveVideoRef = useRef<HTMLVideoElement>(null);
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const chunksRef = useRef<BlobPart[]>([]);
+    const formContainerRef = useRef<HTMLFormElement>(null);
+    const sidebarRef = useRef<HTMLDivElement>(null);
+    const progressHeaderRef = useRef<HTMLDivElement>(null);
 
     const [formData, setFormData] = useState({
         firstName: '',
@@ -308,6 +430,7 @@ export default function TutorOnboardingPage() {
             instituteState: '',
             fromYear: '',
             toYear: '',
+            currentlyWorking: false,
             description: '',
         }],
         gradeLevels: [] as string[],
@@ -337,6 +460,84 @@ export default function TutorOnboardingPage() {
     });
     const [isLoadingDrafts, setIsLoadingDrafts] = useState(true);
     const [draftError, setDraftError] = useState<string | null>(null);
+
+    // Profile photo preview URL (for HEIC conversion)
+    const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
+
+    // Auto-fill name fields from user metadata or email
+    useEffect(() => {
+        if (user && !formData.firstName && !formData.lastName) {
+            console.log('🔍 Auto-filling name from user data...');
+            console.log('User metadata:', user.user_metadata);
+            console.log('User email:', user.email);
+
+            // Try to get name from user metadata first
+            const userMetadata = user.user_metadata;
+            let firstName = userMetadata?.first_name || userMetadata?.given_name || '';
+            let lastName = userMetadata?.last_name || userMetadata?.family_name || '';
+            let fullName = userMetadata?.full_name || userMetadata?.name || '';
+
+            console.log('From metadata - firstName:', firstName, 'lastName:', lastName, 'fullName:', fullName);
+
+            // If we have a full name but not first/last, split it
+            if (fullName && !firstName && !lastName) {
+                const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
+                if (nameParts.length > 0) {
+                    firstName = nameParts[0];
+                    if (nameParts.length > 1) {
+                        lastName = nameParts.slice(1).join(' ');
+                    }
+                }
+                console.log('Split full name - firstName:', firstName, 'lastName:', lastName);
+            }
+
+            // If no metadata, try to extract from email
+            if (!firstName && !lastName && user.email) {
+                const emailName = user.email.split('@')[0];
+                // Remove numbers and special characters
+                const cleanName = emailName.replace(/[0-9._-]/g, ' ').trim();
+                const nameParts = cleanName.split(' ').filter(part => part.length > 0);
+
+                if (nameParts.length > 0) {
+                    firstName = nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1).toLowerCase();
+                    if (nameParts.length > 1) {
+                        lastName = nameParts.slice(1).map((part: string) =>
+                            part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+                        ).join(' ');
+                    }
+                }
+                console.log('From email - firstName:', firstName, 'lastName:', lastName);
+            }
+
+            // Set the form data with auto-filled values
+            if (firstName || lastName) {
+                const displayName = `${firstName} ${lastName}`.trim();
+                console.log('✅ Auto-filled names - firstName:', firstName, 'lastName:', lastName, 'displayName:', displayName);
+
+                setFormData(prev => ({
+                    ...prev,
+                    firstName,
+                    lastName,
+                    displayName: displayName || firstName,
+                }));
+            } else {
+                console.log('❌ Could not auto-fill names from user data');
+            }
+        }
+    }, [user]);
+
+    // Auto-update display name when first or last name changes
+    useEffect(() => {
+        if (formData.firstName || formData.lastName) {
+            const newDisplayName = `${formData.firstName} ${formData.lastName}`.trim();
+            if (newDisplayName && newDisplayName !== formData.displayName) {
+                setFormData(prev => ({
+                    ...prev,
+                    displayName: newDisplayName,
+                }));
+            }
+        }
+    }, [formData.firstName, formData.lastName]);
 
     // Load saved data from localStorage on mount
     useEffect(() => {
@@ -394,6 +595,52 @@ export default function TutorOnboardingPage() {
         localStorage.setItem('tutorOnboardingAgreedToTerms', agreedToTerms.toString());
     }, [formData, step, agreedToTerms]);
 
+    // Handle HEIC conversion for profile photo preview
+    useEffect(() => {
+        async function createPreview() {
+            if (formData.profilePhoto) {
+                const file = formData.profilePhoto;
+                const isHEIC = file.type === 'image/heic' ||
+                    file.type === 'image/heif' ||
+                    file.name.toLowerCase().endsWith('.heic') ||
+                    file.name.toLowerCase().endsWith('.heif');
+
+                if (isHEIC) {
+                    try {
+                        const heic2any = (await import('heic2any')).default;
+                        const convertedBlob = await heic2any({
+                            blob: file,
+                            toType: 'image/jpeg',
+                            quality: 0.9
+                        });
+                        const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                        const url = URL.createObjectURL(blob);
+                        setProfilePhotoPreviewUrl(url);
+                    } catch (error) {
+                        console.error('HEIC conversion error:', error);
+                        setProfilePhotoPreviewUrl(null);
+                    }
+                } else {
+                    const url = URL.createObjectURL(file);
+                    setProfilePhotoPreviewUrl(url);
+                }
+            } else {
+                if (profilePhotoPreviewUrl) {
+                    URL.revokeObjectURL(profilePhotoPreviewUrl);
+                    setProfilePhotoPreviewUrl(null);
+                }
+            }
+        }
+
+        createPreview();
+
+        return () => {
+            if (profilePhotoPreviewUrl) {
+                URL.revokeObjectURL(profilePhotoPreviewUrl);
+            }
+        };
+    }, [formData.profilePhoto]);
+
     // Auto-set account name from user's name when account number is complete
     useEffect(() => {
         if (formData.accountNumber.length === 10 && formData.bankName && formData.firstName && formData.lastName) {
@@ -411,7 +658,7 @@ export default function TutorOnboardingPage() {
                 setIsLoadingDrafts(true);
                 setDraftError(null);
 
-                // Validate drafts with server
+                // Validate drafts with server - with better error handling
                 const validatedDrafts = await validateDraftsWithServer(user.id);
 
                 // Update state with validated drafts
@@ -429,11 +676,14 @@ export default function TutorOnboardingPage() {
 
                 setDraftMetadata(draftsMap);
 
-                // Cleanup stale references
-                await cleanupStaleDraftReferences(user.id);
+                // Cleanup stale references - only if validation succeeded
+                if (Object.keys(validatedDrafts).length > 0) {
+                    await cleanupStaleDraftReferences(user.id);
+                }
             } catch (error) {
                 console.error('Failed to load drafts:', error);
-                setDraftError('Failed to load saved files. You can continue without them.');
+                // Don't show error to user - just continue without drafts
+                console.log('Continuing without draft files - user can upload fresh files');
             } finally {
                 setIsLoadingDrafts(false);
             }
@@ -445,16 +695,24 @@ export default function TutorOnboardingPage() {
     // Helper function to restore a draft file
     const handleDraftRestore = async (metadata: DraftMetadata, fileType: FileType) => {
         try {
-            // Fetch signed URL for the draft
-            const response = await fetch(`/api/drafts/download/${metadata.id}`);
-            if (!response.ok) throw new Error('Failed to get download URL');
+            console.log('🔄 Restoring draft:', fileType, metadata);
 
-            const { signedUrl } = await response.json();
+            // Since drafts bucket is public, we can use the public URL directly
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const publicUrl = `${supabaseUrl}/storage/v1/object/public/drafts/${metadata.storage_path}`;
 
-            // Fetch the file
-            const fileResponse = await fetch(signedUrl);
+            console.log('📥 Fetching file from:', publicUrl);
+
+            // Fetch the file from public URL
+            const fileResponse = await fetch(publicUrl);
+            if (!fileResponse.ok) {
+                throw new Error(`Failed to fetch file: ${fileResponse.statusText}`);
+            }
+
             const blob = await fileResponse.blob();
             const file = new File([blob], metadata.original_filename, { type: metadata.mime_type });
+
+            console.log('✅ File restored:', file.name, file.size, 'bytes');
 
             // Update form state based on file type
             const fieldMap: Record<FileType, string> = {
@@ -467,9 +725,15 @@ export default function TutorOnboardingPage() {
 
             const fieldName = fieldMap[fileType];
             setFormData(prev => ({ ...prev, [fieldName]: file }));
+
+            toast.success('File restored successfully', {
+                description: `${metadata.original_filename} has been restored`,
+            });
         } catch (error) {
-            console.error('Failed to restore draft:', error);
-            alert('Failed to restore file. Please upload again.');
+            console.error('❌ Failed to restore draft:', error);
+            toast.error('Failed to restore file', {
+                description: 'Please upload the file again',
+            });
         }
     };
 
@@ -482,30 +746,75 @@ export default function TutorOnboardingPage() {
             return;
         }
 
+        // Check file size (10MB limit for better compatibility with Next.js)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+            toast.error('File too large', {
+                description: `Video must be less than 10MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB. Please compress your video or record a shorter clip.`,
+                duration: 7000,
+            });
+            return;
+        }
+
+        // Show upload progress toast
+        const uploadToast = toast.loading('Uploading video...', {
+            description: 'Please wait while we upload your intro video'
+        });
+
         try {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('fileType', 'intro_video');
-            formData.append('clerkUserId', user.id);
+            formData.append('authUserId', user.id);
+
+            console.log('Uploading video:', {
+                name: file.name,
+                size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+                type: file.type
+            });
 
             const response = await fetch('/api/drafts/upload', {
                 method: 'POST',
                 body: formData,
             });
 
+            console.log('Upload response status:', response.status);
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Upload failed');
+                let errorMessage = 'Upload failed';
+
+                try {
+                    const errorData = await response.json();
+                    console.error('Upload error response:', errorData);
+                    errorMessage = errorData.error || errorData.details || 'Upload failed';
+                } catch (parseError) {
+                    // If we can't parse JSON, it might be a Next.js error page
+                    const textResponse = await response.text();
+                    console.error('Upload error (non-JSON):', textResponse.substring(0, 500));
+
+                    if (response.status === 413) {
+                        errorMessage = 'File too large for server. Please use a video under 10MB.';
+                    } else if (response.status === 400) {
+                        errorMessage = 'The video file is too large or in an unsupported format. Please use a smaller video (under 10MB) in MP4 or WebM format.';
+                    } else {
+                        errorMessage = `Upload failed with status ${response.status}. Please try a smaller video file.`;
+                    }
+                }
+
+                toast.dismiss(uploadToast);
+                throw new Error(errorMessage);
             }
 
+            toast.dismiss(uploadToast);
             toast.success('Video uploaded successfully', {
                 description: 'Your intro video has been saved',
             });
         } catch (error) {
             console.error('Video upload error:', error);
+            toast.dismiss(uploadToast);
             toast.error('Upload failed', {
-                description: error instanceof Error ? error.message : 'Failed to upload video',
-                duration: 5000,
+                description: error instanceof Error ? error.message : 'Failed to upload video. Please try a smaller file.',
+                duration: 7000,
             });
         }
     };
@@ -514,13 +823,6 @@ export default function TutorOnboardingPage() {
     const genderOptions = [{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }];
     const stateOptions = Object.keys(NIGERIAN_STATES_WITH_LGAS).sort().map(state => ({ value: state, label: state }));
     const lgaOptions = availableLGAs.map(lga => ({ value: lga, label: lga }));
-
-    useEffect(() => {
-        if (user) {
-            const nameParts = user.fullName?.split(' ') || ['', ''];
-            setFormData(prev => ({ ...prev, firstName: nameParts[0] || '', lastName: nameParts.slice(1).join(' ') || '', displayName: user.fullName || '' }));
-        }
-    }, [user]);
 
     const handleSubjectToggle = (subject: string) => {
         setFormData((prev) => ({ ...prev, subjects: prev.subjects.includes(subject) ? prev.subjects.filter((s) => s !== subject) : [...prev.subjects, subject] }));
@@ -547,7 +849,7 @@ export default function TutorOnboardingPage() {
     };
 
     const handleAddExperience = () => {
-        setFormData((prev) => ({ ...prev, experiences: [...prev.experiences, { post: '', institute: '', instituteState: '', fromYear: '', toYear: '', description: '' }] }));
+        setFormData((prev) => ({ ...prev, experiences: [...prev.experiences, { post: '', institute: '', instituteState: '', fromYear: '', toYear: '', currentlyWorking: false, description: '' }] }));
     };
 
     const handleRemoveExperience = (index: number) => {
@@ -772,10 +1074,73 @@ export default function TutorOnboardingPage() {
         setIsSubmitting(true);
         setError(null);
         try {
+            // Get profile photo URL from draft metadata
+            let profilePhotoUrl = null;
+            if (draftMetadata.profile_photo?.storage_path) {
+                const { data: publicUrlData } = supabase
+                    .storage
+                    .from('drafts') // Profile photos are stored in drafts bucket
+                    .getPublicUrl(draftMetadata.profile_photo.storage_path);
+
+                profilePhotoUrl = publicUrlData.publicUrl;
+            }
+
+            // Get intro video URL from draft metadata
+            let introVideoUrl = null;
+            if (draftMetadata.intro_video?.storage_path) {
+                const { data: publicUrlData } = supabase
+                    .storage
+                    .from('drafts') // Intro videos are stored in drafts bucket
+                    .getPublicUrl(draftMetadata.intro_video.storage_path);
+
+                introVideoUrl = publicUrlData.publicUrl;
+            }
+
+            // Get document URLs from draft metadata
+            let degreeCertificateUrl = null;
+            if (draftMetadata.degree_certificate?.storage_path) {
+                const { data: publicUrlData } = supabase
+                    .storage
+                    .from('drafts')
+                    .getPublicUrl(draftMetadata.degree_certificate.storage_path);
+
+                degreeCertificateUrl = publicUrlData.publicUrl;
+            }
+
+            let governmentIdUrl = null;
+            if (draftMetadata.government_id?.storage_path) {
+                const { data: publicUrlData } = supabase
+                    .storage
+                    .from('drafts')
+                    .getPublicUrl(draftMetadata.government_id.storage_path);
+
+                governmentIdUrl = publicUrlData.publicUrl;
+            }
+
+            let nyscCertificateUrl = null;
+            if (draftMetadata.nysc_certificate?.storage_path) {
+                const { data: publicUrlData } = supabase
+                    .storage
+                    .from('drafts')
+                    .getPublicUrl(draftMetadata.nysc_certificate.storage_path);
+
+                nyscCertificateUrl = publicUrlData.publicUrl;
+            }
+
             const response = await fetch('/api/onboarding/tutor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ clerkUserId: user.id, name: `${formData.firstName} ${formData.lastName}`, email: user.primaryEmailAddress?.emailAddress, ...formData }),
+                body: JSON.stringify({
+                    authUserId: user.id,
+                    name: `${formData.firstName} ${formData.lastName}`,
+                    email: user.email,
+                    ...formData,
+                    profilePhotoUrl, // Add the profile photo URL
+                    introVideoUrl, // Add the intro video URL
+                    degreeCertificateUrl, // Add degree certificate URL
+                    governmentIdUrl, // Add government ID URL
+                    nyscCertificateUrl, // Add NYSC certificate URL
+                }),
             });
             if (!response.ok) {
                 const data = await response.json();
@@ -799,7 +1164,23 @@ export default function TutorOnboardingPage() {
         }
     };
 
-    const isStep1Valid = formData.firstName && formData.lastName && formData.displayName && formData.gender && formData.dateOfBirth && formData.state && formData.lga;
+    // Calculate age from date of birth
+    const calculateAge = (birthDate: string): number => {
+        if (!birthDate) return 0;
+        const today = new Date();
+        const birth = new Date(birthDate);
+        let age = today.getFullYear() - birth.getFullYear();
+        const monthDiff = today.getMonth() - birth.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+            age--;
+        }
+        return age;
+    };
+
+    const userAge = calculateAge(formData.dateOfBirth);
+    const isAgeValid = userAge >= 18;
+
+    const isStep1Valid = formData.firstName && formData.lastName && formData.displayName && formData.gender && formData.dateOfBirth && formData.state && formData.lga && isAgeValid;
     const isStep2Valid = formData.subjects.length > 0 &&
         formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) &&
         (formData.gradeLevels.length > 0 || formData.examTypes.length > 0) &&
@@ -828,1126 +1209,1400 @@ export default function TutorOnboardingPage() {
         }
     }, [step, formData, isStep2Valid]);
 
+    // GSAP Animation when step changes
+    useEffect(() => {
+        if (formContainerRef.current) {
+            // Animate form content
+            gsap.fromTo(
+                formContainerRef.current,
+                {
+                    opacity: 0,
+                    y: 30,
+                    scale: 0.98
+                },
+                {
+                    opacity: 1,
+                    y: 0,
+                    scale: 1,
+                    duration: 0.6,
+                    ease: 'power3.out'
+                }
+            );
+
+            // Animate form fields with stagger
+            const formElements = formContainerRef.current.querySelectorAll('.animate-field');
+            if (formElements.length > 0) {
+                gsap.fromTo(
+                    formElements,
+                    {
+                        opacity: 0,
+                        y: 20
+                    },
+                    {
+                        opacity: 1,
+                        y: 0,
+                        duration: 0.5,
+                        stagger: 0.08,
+                        ease: 'power2.out',
+                        delay: 0.2
+                    }
+                );
+            }
+        }
+
+        // Animate sidebar progress header
+        if (progressHeaderRef.current) {
+            gsap.fromTo(
+                progressHeaderRef.current,
+                {
+                    scale: 0.95,
+                    opacity: 0.8
+                },
+                {
+                    scale: 1,
+                    opacity: 1,
+                    duration: 0.5,
+                    ease: 'back.out(1.2)'
+                }
+            );
+        }
+
+        // Animate sidebar step items - only for incomplete steps
+        if (sidebarRef.current) {
+            const stepItems = sidebarRef.current.querySelectorAll('.sidebar-step-item');
+            // Filter to only animate steps that are current or upcoming (not completed)
+            const incompleteSteps = Array.from(stepItems).filter((_, index) => {
+                const stepNumber = index + 1;
+                return stepNumber >= step; // Only animate current and future steps
+            });
+
+            if (incompleteSteps.length > 0) {
+                gsap.fromTo(
+                    incompleteSteps,
+                    {
+                        x: -20,
+                        opacity: 0
+                    },
+                    {
+                        x: 0,
+                        opacity: 1,
+                        duration: 0.4,
+                        stagger: 0.05,
+                        ease: 'power2.out',
+                        delay: 0.1
+                    }
+                );
+            }
+        }
+    }, [step]);
+
     const themeColor = '#FF6B35';
     const lightBg = '#FFF5F2';
     const totalSteps = 8;
     const progressPercentage = (step / totalSteps) * 100;
     const [isBottomRightHovered, setIsBottomRightHovered] = useState(false);
 
+    const steps = [
+        { number: 1, title: 'Personal Details', subtitle: 'Basic info', icon: '👤' },
+        { number: 2, title: 'Teaching Details', subtitle: 'Subjects & Experience', icon: '📚' },
+        { number: 3, title: 'Contact Info', subtitle: 'Phone verification', icon: '📞' },
+        { number: 4, title: 'Verification', subtitle: 'Upload documents', icon: '📄' },
+        { number: 5, title: 'Profile Media', subtitle: 'Photo & Video', icon: '📸' },
+        { number: 6, title: 'Payout Details', subtitle: 'Bank setup', icon: '💳' },
+        { number: 7, title: 'Platform Rules', subtitle: 'Terms & Conduct', icon: '📋' },
+        { number: 8, title: 'Review Application', subtitle: 'Final check', icon: '✓' },
+    ];
+
     return (
-        <div className="min-h-screen flex flex-col transition-colors duration-500 relative overflow-hidden" style={{ backgroundColor: lightBg }}>
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute w-96 h-96 rounded-full opacity-20 animate-float-diagonal" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, top: '10%', left: '5%', filter: 'blur(40px)' }} />
-                <div className="absolute w-[28rem] h-[28rem] rounded-full opacity-15 animate-float-circular" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, top: '50%', right: '5%', animationDelay: '2s', filter: 'blur(50px)' }} />
-                <div className="absolute w-80 h-80 rounded-full opacity-18 animate-float-wave" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, bottom: '10%', left: '20%', animationDelay: '4s', filter: 'blur(45px)' }} />
+        <>
+            <div className="min-h-screen flex flex-col md:flex-row transition-colors duration-500 relative overflow-hidden" style={{ backgroundColor: lightBg }}>
+                {/* Background decorations */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    <div className="absolute w-96 h-96 rounded-full opacity-20 animate-float-diagonal" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, top: '10%', left: '5%', filter: 'blur(40px)' }} />
+                    <div className="absolute w-[28rem] h-[28rem] rounded-full opacity-15 animate-float-circular" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, top: '50%', right: '5%', animationDelay: '2s', filter: 'blur(50px)' }} />
+                    <div className="absolute w-80 h-80 rounded-full opacity-18 animate-float-wave" style={{ background: `radial-gradient(circle, ${themeColor} 0%, transparent 70%)`, bottom: '10%', left: '20%', animationDelay: '4s', filter: 'blur(45px)' }} />
 
-                {/* Bouncing balls - separate, not in wrapper */}
-                <BouncingBalls isHovered={isBottomRightHovered} />
+                    {/* Bouncing balls - separate, not in wrapper */}
+                    <BouncingBalls isHovered={isBottomRightHovered} />
 
-                {/* Half circle pie - with hover area wrapper */}
-                <div
-                    className="absolute pointer-events-auto cursor-pointer z-20"
-                    style={{
-                        bottom: 0,
-                        right: 0,
-                        width: '256px',
-                        height: '256px'
-                    }}
-                    onMouseEnter={() => setIsBottomRightHovered(true)}
-                    onMouseLeave={() => setIsBottomRightHovered(false)}
-                >
-                    {/* Animated border ring on hover */}
-                    {isBottomRightHovered && (
+                    {/* Half circle pie - with hover area wrapper */}
+                    <div
+                        className="absolute pointer-events-auto cursor-pointer z-0"
+                        style={{
+                            bottom: 0,
+                            right: 0,
+                            width: '256px',
+                            height: '256px'
+                        }}
+                        onMouseEnter={() => setIsBottomRightHovered(true)}
+                        onMouseLeave={() => setIsBottomRightHovered(false)}
+                    >
+                        {/* Animated border ring on hover */}
+                        {isBottomRightHovered && (
+                            <div
+                                className="absolute w-[32rem] h-[32rem] rounded-full pointer-events-none animate-soft-pulse transition-all duration-500 ease-out"
+                                style={{
+                                    bottom: '-16rem',
+                                    right: '-16rem',
+                                    border: `6px solid ${themeColor}`,
+                                    clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)',
+                                    opacity: 0.6,
+                                    transform: 'translate(32px, 32px) scale(1.1)'
+                                }}
+                            />
+                        )}
+
+                        {/* Main pie circle */}
                         <div
-                            className="absolute w-[32rem] h-[32rem] rounded-full pointer-events-none animate-soft-pulse transition-all duration-500 ease-out"
+                            className={`absolute w-[32rem] h-[32rem] rounded-full overflow-hidden transition-all duration-500 ease-out pointer-events-none ${isBottomRightHovered ? 'animate-soft-pulse' : ''}`}
                             style={{
                                 bottom: '-16rem',
                                 right: '-16rem',
-                                border: `6px solid ${themeColor}`,
+                                border: `4px solid ${themeColor}`,
+                                backgroundColor: themeColor,
+                                opacity: isBottomRightHovered ? 0.35 : 0.25,
                                 clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)',
-                                opacity: 0.6,
-                                transform: 'translate(32px, 32px) scale(1.1)'
+                                transform: isBottomRightHovered ? 'translate(32px, 32px) scale(1.1)' : 'translate(0, 0) scale(1)',
+                                boxShadow: isBottomRightHovered ? `0 0 40px 10px rgba(255, 107, 53, 0.3)` : 'none'
                             }}
                         />
-                    )}
+                    </div>
+                </div>
 
-                    {/* Main pie circle */}
-                    <div
-                        className={`absolute w-[32rem] h-[32rem] rounded-full overflow-hidden transition-all duration-500 ease-out pointer-events-none ${isBottomRightHovered ? 'animate-soft-pulse' : ''}`}
-                        style={{
-                            bottom: '-16rem',
-                            right: '-16rem',
-                            border: `4px solid ${themeColor}`,
-                            backgroundColor: themeColor,
-                            opacity: isBottomRightHovered ? 0.35 : 0.25,
-                            clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)',
-                            transform: isBottomRightHovered ? 'translate(32px, 32px) scale(1.1)' : 'translate(0, 0) scale(1)',
-                            boxShadow: isBottomRightHovered ? `0 0 40px 10px rgba(255, 107, 53, 0.3)` : 'none'
-                        }}
-                    />
-                </div>
-            </div>
-            <div className="w-full bg-white shadow-sm relative z-10">
-                <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <BookOpen className="w-8 h-8 text-[#FF6B35]" />
-                        <span className="text-2xl font-outfit font-bold text-gray-900">SabiLearn</span>
-                    </div>
-                    <div className="bg-[#00D9A5] text-white px-4 py-2 rounded-lg font-inter font-semibold text-sm">TEACHER APPLICATION</div>
-                </div>
-            </div>
-            <div className="w-full bg-white shadow-sm relative z-10">
-                <div className="max-w-4xl mx-auto px-6">
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full transition-all duration-300 ease-out" style={{ width: `${progressPercentage}%`, backgroundColor: themeColor }} />
-                    </div>
-                </div>
-            </div>
-            <div className="flex-1 flex items-start justify-center relative z-10 py-8 px-4">
-                <div className="w-full max-w-3xl">
-                    <div className="text-center mb-6">
-                        <p className="text-sm text-gray-600 font-inter font-medium">Step {step} of {totalSteps}</p>
-                    </div>
-                    <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 md:p-8 mb-6">
-                        {step === 1 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Personal Details</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Tell us a bit about yourself. This information helps us match you with students.</p>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">First Name</label>
-                                        <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Chukwudi" required />
-                                    </div>
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">Last Name</label>
-                                        <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Okafor" required />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-2">Display Name (Public)</label>
-                                    <input type="text" value={formData.displayName} onChange={(e) => setFormData({ ...formData, displayName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Mr. Chukwudi" required />
-                                    <p className="text-sm text-gray-500 mt-1 font-inter">This is what parents and students will see.</p>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
-                                        <CustomSelect value={formData.gender} onChange={(value) => setFormData({ ...formData, gender: value })} options={genderOptions} placeholder="Select Gender" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
-                                        <input type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" required />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
-                                        <CustomSelect value={formData.state} onChange={(value) => setFormData({ ...formData, state: value, lga: '' })} options={stateOptions} placeholder="Select State" searchable />
-                                    </div>
-                                    <div>
-                                        <label className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
-                                        <CustomSelect value={formData.lga} onChange={(value) => setFormData({ ...formData, lga: value })} options={lgaOptions} placeholder="Select LGA" disabled={!formData.state} searchable />
-                                    </div>
-                                </div>
+                {/* Left Sidebar - Desktop/Tablet only */}
+                <div ref={sidebarRef} className="hidden md:flex md:w-80 lg:w-96 bg-white relative z-10 flex-col shadow-sm">
+                    {/* Logo */}
+                    <div className="p-8 border-b border-gray-100">
+                        <div className="flex items-center gap-3 mb-1">
+                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#FF6B35] to-[#FF8C5A] flex items-center justify-center shadow-md">
+                                <BookOpen className="w-6 h-6 text-white" />
                             </div>
-                        )}
-                        {step === 2 && (
-                            <div className="space-y-8">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Teaching Details</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Share your teaching expertise and experience.</p>
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-3">Subjects You Teach (select at least one)</label>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {SUBJECTS.map((subject) => (
-                                            <button key={subject} type="button" onClick={() => handleSubjectToggle(subject)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.subjects.includes(subject) ? 'bg-[#FF6B35] text-white border-[#FF6B35]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF6B35]'}`}>{subject}</button>
-                                        ))}
-                                        {!showCustomSubject ? (
-                                            <button type="button" onClick={() => setShowCustomSubject(true)} className="px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 border-dashed border-gray-300 text-gray-600 hover:border-[#FF6B35] hover:text-[#FF6B35] flex items-center justify-center gap-2">
-                                                <Plus className="w-4 h-4" />Add Subject
-                                            </button>
-                                        ) : (
-                                            <div className="col-span-2 md:col-span-4 flex gap-2">
-                                                <input type="text" value={newCustomSubject} onChange={(e) => setNewCustomSubject(e.target.value)} placeholder="Enter subject name" className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSubject())} />
-                                                <button type="button" onClick={handleAddCustomSubject} className="px-4 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all">Add</button>
-                                                <button type="button" onClick={() => { setShowCustomSubject(false); setNewCustomSubject(''); }} className="px-4 py-3 rounded-lg bg-gray-100 text-gray-700 font-inter font-medium hover:bg-gray-200 transition-all">Cancel</button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    {formData.subjects.filter(s => !SUBJECTS.includes(s)).length > 0 && (
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            {formData.subjects.filter(s => !SUBJECTS.includes(s)).map((subject) => (
-                                                <div key={subject} className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#FF6B35] text-white rounded-lg font-inter text-sm">
-                                                    {subject}
-                                                    <button type="button" onClick={() => handleRemoveSubject(subject)} className="hover:bg-white/20 rounded-full p-0.5 transition-colors">
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-3">Teaching Experience</label>
-                                    {formData.experiences.map((experience, index) => (
-                                        <div key={index} className="mb-6 p-6 border-2 border-gray-200 rounded-lg relative">
-                                            {formData.experiences.length > 1 && (
-                                                <button type="button" onClick={() => handleRemoveExperience(index)} className="absolute top-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                            <div className="space-y-4">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Post/Position</label>
-                                                        <input type="text" value={experience.post} onChange={(e) => handleExperienceChange(index, 'post', e.target.value)} placeholder="e.g. Mathematics Tutor" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute/Organization</label>
-                                                        <input type="text" value={experience.institute} onChange={(e) => handleExperienceChange(index, 'institute', e.target.value)} placeholder="e.g. Private Tutoring" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div>
-                                                        <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute State</label>
-                                                        <CustomSelect value={experience.instituteState} onChange={(value) => handleExperienceChange(index, 'instituteState', value)} options={stateOptions} placeholder="Select State" searchable />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">From Year</label>
-                                                        <input type="number" value={experience.fromYear} onChange={(e) => handleExperienceChange(index, 'fromYear', e.target.value)} placeholder="2017" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">To Year</label>
-                                                        <input type="number" value={experience.toYear} onChange={(e) => handleExperienceChange(index, 'toYear', e.target.value)} placeholder="2020" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Description</label>
-                                                    <textarea value={experience.description} onChange={(e) => handleExperienceChange(index, 'description', e.target.value)} rows={3} placeholder="e.g. Provided one-on-one tutoring for JAMB and WAEC candidates with 90% success rate." className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter text-sm" required />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    <button type="button" onClick={handleAddExperience} className="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-600 hover:border-[#FF6B35] hover:text-[#FF6B35] font-inter font-medium transition-all flex items-center justify-center gap-2">
-                                        <Plus className="w-4 h-4" />Add Another Experience
-                                    </button>
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-3">Grade Levels (select at least one)</label>
-                                    <div className="mb-4">
-                                        <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Primary</p>
-                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                                            {GRADE_LEVELS.primary.map((level) => (
-                                                <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#FF6B35] transition-all">
-                                                    <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]" />
-                                                    <span className="text-sm font-inter text-gray-700">{level}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="mb-4">
-                                        <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Secondary</p>
-                                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                                            {GRADE_LEVELS.secondary.map((level) => (
-                                                <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#FF6B35] transition-all">
-                                                    <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]" />
-                                                    <span className="text-sm font-inter text-gray-700">{level}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-3">Exam Preparation</label>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {EXAM_TYPES.map((examType) => (
-                                            <button key={examType} type="button" onClick={() => handleExamTypeToggle(examType)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.examTypes.includes(examType) ? 'bg-[#FF6B35] text-white border-[#FF6B35]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF6B35]'}`}>
-                                                {examType}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-2">Bio (minimum 200 characters)</label>
-                                    <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter" placeholder="Tell students about yourself, your teaching experience, and what makes you a great tutor..." required />
-                                    <p className={`text-sm mt-2 font-inter ${formData.bio.length < 200 ? 'text-red-500' : 'text-gray-500'}`}>
-                                        {formData.bio.length}/760 characters {formData.bio.length < 200 && `(${200 - formData.bio.length} more needed)`}
-                                    </p>
-                                </div>
+                            <span className="text-2xl font-outfit font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">SabiLearn</span>
+                        </div>
+                    </div>
 
-                                {/* Validation Helper */}
-                                {!isStep2Valid && (
-                                    <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                        <p className="text-sm font-inter font-semibold text-yellow-800 mb-2">Please complete the following:</p>
-                                        <ul className="text-sm text-yellow-700 space-y-1 font-inter">
-                                            {formData.subjects.length === 0 && <li>• Select at least one subject</li>}
-                                            {!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) && <li>• Fill all experience fields</li>}
-                                            {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && <li>• Select at least one grade level or exam type</li>}
-                                            {formData.bio.length < 200 && <li>• Bio must be at least 200 characters (currently {formData.bio.length})</li>}
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {step === 3 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Contact Information</h2>
-                                            <p className="text-gray-600 font-inter text-sm">Verify your phone number to continue.</p>
-                                        </div>
-                                        {!formData.phoneVerified && formData.phone && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setStep(4)}
-                                                className="text-[#FF6B35] font-inter font-medium hover:underline text-sm"
-                                            >
-                                                Skip for now →
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
+                    {/* Progress Header */}
+                    <div ref={progressHeaderRef} className="px-8 py-6 bg-gradient-to-br from-gray-50 to-white border-b border-gray-100">
+                        <p className="text-xs font-inter font-semibold text-gray-500 uppercase tracking-wider mb-1">Application Progress</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-outfit font-bold text-gray-900">{Math.round(progressPercentage)}%</span>
+                            <span className="text-sm font-inter text-gray-500">Complete</span>
+                        </div>
+                    </div>
 
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
-                                    <div className="flex gap-3">
-                                        <input
-                                            type="tel"
-                                            value={formData.phone}
-                                            onChange={(e) => {
-                                                setFormData({ ...formData, phone: e.target.value });
-                                                setVerificationSent(false);
-                                                setFormData(prev => ({ ...prev, phoneVerified: false, verificationCode: '' }));
-                                            }}
-                                            disabled={formData.phoneVerified}
-                                            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                            placeholder="+234 800 000 0000"
-                                            required
-                                        />
-                                        {!formData.phoneVerified && (
-                                            <button
-                                                type="button"
-                                                onClick={handleSendVerificationCode}
-                                                disabled={isVerifying || !formData.phone}
-                                                className="px-6 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                                            >
-                                                {isVerifying ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
-                                            </button>
-                                        )}
-                                        {formData.phoneVerified && (
-                                            <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg">
-                                                <Check className="w-5 h-5 text-green-600" />
-                                                <span className="text-sm font-inter font-medium text-green-700">Verified</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-sm text-gray-500 mt-2 font-inter">Enter your phone number in international format (e.g., +234...)</p>
-                                </div>
+                    {/* Progress Steps */}
+                    <div className="flex-1 overflow-y-auto px-6 py-6">
+                        <div className="space-y-1">
+                            {steps.map((s, index) => {
+                                const isCompleted = s.number < step;
+                                const isCurrent = s.number === step;
+                                const isUpcoming = s.number > step;
 
-                                {verificationSent && !formData.phoneVerified && (
-                                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                        <p className="text-sm text-blue-800 font-inter mb-4">
-                                            We've sent a 6-digit verification code to {formData.phone}
-                                        </p>
-                                        <div className="flex gap-3">
-                                            <input
-                                                type="text"
-                                                value={formData.verificationCode}
-                                                onChange={(e) => setFormData({ ...formData, verificationCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                                                maxLength={6}
-                                                className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 text-center text-lg font-semibold tracking-widest focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
-                                                placeholder="000000"
+                                return (
+                                    <div
+                                        key={s.number}
+                                        className={`sidebar-step-item relative flex items-start gap-4 p-4 rounded-xl transition-all duration-200 cursor-pointer group ${isCurrent
+                                            ? 'bg-orange-50 border-l-4 border-[#FF6B35]'
+                                            : isCompleted
+                                                ? 'hover:bg-gray-50'
+                                                : 'opacity-50 cursor-not-allowed'
+                                            }`}
+                                        onClick={() => {
+                                            if (isCompleted || isCurrent) {
+                                                setStep(s.number);
+                                            }
+                                        }}
+                                    >
+                                        {/* Connector Line */}
+                                        {index < steps.length - 1 && (
+                                            <div
+                                                className={`absolute left-8 top-14 w-0.5 h-8 ${isCompleted ? 'bg-green-400' : 'bg-gray-200'
+                                                    }`}
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={handleVerifyCode}
-                                                disabled={isVerifying || formData.verificationCode.length !== 6}
-                                                className="px-6 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                {isVerifying ? 'Verifying...' : 'Verify'}
-                                            </button>
+                                        )}
+
+                                        {/* Icon/Status */}
+                                        <div className="relative z-10 flex-shrink-0">
+                                            {isCompleted ? (
+                                                <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center shadow-sm">
+                                                    <Check className="w-5 h-5 text-white" strokeWidth={3} />
+                                                </div>
+                                            ) : isCurrent ? (
+                                                <div className="w-8 h-8 rounded-full flex items-center justify-center shadow-md ring-4 ring-[#FF6B35]/20" style={{ backgroundColor: themeColor }}>
+                                                    <div className="w-3 h-3 rounded-full bg-white"></div>
+                                                </div>
+                                            ) : (
+                                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                                    <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Text Content */}
+                                        <div className="flex-1 min-w-0 pt-0.5">
+                                            <p className={`font-inter font-semibold text-sm leading-tight mb-0.5 ${isCurrent
+                                                ? 'text-[#FF6B35]'
+                                                : isCompleted
+                                                    ? 'text-gray-900'
+                                                    : 'text-gray-400'
+                                                }`}>
+                                                {s.title}
+                                            </p>
+                                            <p className={`font-inter text-xs leading-tight ${isCurrent
+                                                ? 'text-[#FF6B35]'
+                                                : isCompleted
+                                                    ? 'text-gray-500'
+                                                    : 'text-gray-400'
+                                                }`}>
+                                                {s.subtitle}
+                                            </p>
                                         </div>
                                     </div>
-                                )}
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
 
-                                {verificationError && (
-                                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                                        <p className="text-sm text-red-600 font-inter">{verificationError}</p>
+                {/* Main Content Area */}
+                <div className=" w-full flex-1 flex flex-col ">
+                    <div className="flex-1 flex flex-col relative z-20">
+                        {/* Mobile Header */}
+                        <div className="md:hidden w-full bg-white shadow-sm border-b border-gray-100">
+                            <div className="px-6 py-4 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#FF6B35] to-[#FF8C5A] flex items-center justify-center shadow-md">
+                                        <BookOpen className="w-5 h-5 text-white" />
                                     </div>
-                                )}
-
-                                {!formData.phoneVerified && (
-                                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                        <p className="text-sm text-blue-800 font-inter">
-                                            <span className="font-semibold">Optional:</span> Phone verification helps build trust with students. You can skip this step and verify later from your dashboard.
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {step === 4 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Verification</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Upload documents to verify your expertise. Approved tutors earn 3x more.</p>
+                                    <span className="text-xl font-outfit font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">SabiLearn</span>
                                 </div>
-
-                                {/* Degree Certificate */}
-                                <DraftFileInput
-                                    fileType="degree_certificate"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    maxSize={5 * 1024 * 1024}
-                                    label="Degree Certificate"
-                                    description="Upload your university degree or teaching certificate (PDF, JPG, PNG - Max 5MB)"
-                                    value={formData.degreeCertificate}
-                                    draftMetadata={draftMetadata.degree_certificate}
-                                    onChange={(file) => setFormData({ ...formData, degreeCertificate: file })}
-                                    onDraftRestore={(metadata) => handleDraftRestore(metadata, 'degree_certificate')}
-                                    clerkUserId={user?.id || ''}
-                                />
-
-                                {/* Government ID */}
-                                <DraftFileInput
-                                    fileType="government_id"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    maxSize={5 * 1024 * 1024}
-                                    label="Government ID (NIN/Passport)"
-                                    description="Upload a valid government-issued ID (NIN, Driver's License, Passport - Max 5MB)"
-                                    value={formData.governmentId}
-                                    draftMetadata={draftMetadata.government_id}
-                                    onChange={(file) => setFormData({ ...formData, governmentId: file })}
-                                    onDraftRestore={(metadata) => handleDraftRestore(metadata, 'government_id')}
-                                    clerkUserId={user?.id || ''}
-                                />
-
-                                {/* NYSC Certificate (Optional) */}
-                                <DraftFileInput
-                                    fileType="nysc_certificate"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    maxSize={5 * 1024 * 1024}
-                                    label="NYSC Certificate (Optional)"
-                                    description="Upload your NYSC discharge certificate if applicable (Max 5MB)"
-                                    value={formData.nyscCertificate}
-                                    draftMetadata={draftMetadata.nysc_certificate}
-                                    onChange={(file) => setFormData({ ...formData, nyscCertificate: file })}
-                                    onDraftRestore={(metadata) => handleDraftRestore(metadata, 'nysc_certificate')}
-                                    clerkUserId={user?.id || ''}
-                                />
                             </div>
-                        )}
-                        {step === 5 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Profile Media</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Parents trust tutors they can see and hear.</p>
+                        </div>
+
+                        {/* Mobile Progress Bar */}
+                        <div className="md:hidden w-full bg-white shadow-sm border-b border-gray-100">
+                            <div className="px-6 py-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-inter font-semibold text-gray-500 uppercase tracking-wider">Progress</span>
+                                    <span className="text-sm font-inter font-bold text-gray-900">{Math.round(progressPercentage)}%</span>
                                 </div>
+                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full transition-all duration-300 ease-out rounded-full"
+                                        style={{
+                                            width: `${progressPercentage}%`,
+                                            background: `linear-gradient(to right, ${themeColor}, #FF8C5A)`
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
 
-                                {/* Profile Photo */}
-                                <ProfilePhotoInput
-                                    value={formData.profilePhoto}
-                                    draftMetadata={draftMetadata.profile_photo}
-                                    onChange={(file) => setFormData({ ...formData, profilePhoto: file })}
-                                    onDraftRestore={(metadata) => handleDraftRestore(metadata, 'profile_photo')}
-                                    clerkUserId={user?.id || ''}
-                                />
-
-                                {/* Intro Video */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="block text-gray-700 font-inter font-semibold">Intro Video (2 min)</label>
-                                        <span className="text-xs font-inter font-semibold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">Highly Recommended</span>
+                        {/* Form Content */}
+                        <div className="flex-1 flex items-center justify-center py-8 px-4 overflow-y-auto">
+                            <div className="w-full max-w-4xl">
+                                {/* Mobile Step Indicator */}
+                                <div className="md:hidden text-center mb-6">
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-full border border-gray-200">
+                                        <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: themeColor }}>
+                                            <span className="text-xs font-inter font-bold text-white">{step}</span>
+                                        </div>
+                                        <span className="text-sm text-gray-600 font-inter font-medium">of {totalSteps}</span>
                                     </div>
-
-                                    {/* Draft restoration UI for intro video */}
-                                    {draftMetadata.intro_video && !formData.introVideo && (
-                                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                                            <div className="flex items-center justify-between">
+                                </div>
+                                <form ref={formContainerRef} onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 md:p-8 mb-6">
+                                    {step === 1 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6 animate-field">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Personal Details</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Tell us a bit about yourself. This information helps us match you with students.</p>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div>
-                                                    <p className="text-sm font-medium text-blue-900">
-                                                        Draft found: {draftMetadata.intro_video.original_filename}
-                                                    </p>
-                                                    <p className="text-xs text-blue-700">
-                                                        Uploaded {new Date(draftMetadata.intro_video.uploaded_at).toLocaleDateString()}
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">First Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={formData.firstName}
+                                                        onChange={(e) => {
+                                                            const newFirstName = e.target.value;
+                                                            setFormData({
+                                                                ...formData,
+                                                                firstName: newFirstName,
+                                                                displayName: `${newFirstName} ${formData.lastName}`.trim()
+                                                            });
+                                                        }}
+                                                        className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
+                                                        placeholder="e.g. Chukwudi"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Last Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={formData.lastName}
+                                                        onChange={(e) => {
+                                                            const newLastName = e.target.value;
+                                                            setFormData({
+                                                                ...formData,
+                                                                lastName: newLastName,
+                                                                displayName: `${formData.firstName} ${newLastName}`.trim()
+                                                            });
+                                                        }}
+                                                        className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
+                                                        placeholder="e.g. Okafor"
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="animate-field">
+                                                <label className="block text-gray-700 font-inter font-medium mb-2">Display Name (Public)</label>
+                                                <input type="text" value={formData.displayName} onChange={(e) => setFormData({ ...formData, displayName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Mr. Chukwudi" required />
+                                                <p className="text-sm text-gray-500 mt-1 font-inter">This is what parents and students will see.</p>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
+                                                <div>
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
+                                                    <SearchableSelect
+                                                        value={formData.gender}
+                                                        onChange={(value) => setFormData({ ...formData, gender: value })}
+                                                        options={genderOptions}
+                                                        placeholder="Select Gender"
+                                                        required
+                                                        searchable={false}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
+                                                    <DatePicker
+                                                        value={formData.dateOfBirth}
+                                                        onChange={(value) => setFormData({ ...formData, dateOfBirth: value })}
+                                                        placeholder="Select your date of birth"
+                                                        required
+                                                        minAge={18}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
+                                                <div>
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
+                                                    <SearchableSelect
+                                                        value={formData.state}
+                                                        onChange={(value) => setFormData({ ...formData, state: value, lga: '' })}
+                                                        options={stateOptions}
+                                                        placeholder="Select State"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
+                                                    <SearchableSelect
+                                                        value={formData.lga}
+                                                        onChange={(value) => setFormData({ ...formData, lga: value })}
+                                                        options={lgaOptions}
+                                                        placeholder="Select LGA"
+                                                        disabled={!formData.state}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            {!isStep1Valid && formData.dateOfBirth && !isAgeValid && (
+                                                <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                                    <p className="text-sm font-inter font-semibold text-red-800 mb-1">Age Requirement Not Met</p>
+                                                    <p className="text-sm text-red-700 font-inter">
+                                                        You must be at least 18 years old to register as a tutor. You are currently {userAge} years old.
                                                     </p>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDraftRestore(draftMetadata.intro_video!, 'intro_video')}
-                                                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                                                >
-                                                    Restore
+                                            )}
+                                        </div>
+                                    )}
+                                    {step === 2 && (
+                                        <div className="space-y-8">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Teaching Details</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Share your teaching expertise and experience.</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-3">Subjects You Teach (select at least one)</label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                    {SUBJECTS.map((subject) => (
+                                                        <button key={subject} type="button" onClick={() => handleSubjectToggle(subject)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.subjects.includes(subject) ? 'bg-[#FF6B35] text-white border-[#FF6B35]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF6B35]'}`}>{subject}</button>
+                                                    ))}
+                                                    {!showCustomSubject ? (
+                                                        <button type="button" onClick={() => setShowCustomSubject(true)} className="px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 border-dashed border-gray-300 text-gray-600 hover:border-[#FF6B35] hover:text-[#FF6B35] flex items-center justify-center gap-2">
+                                                            <Plus className="w-4 h-4" />Add Subject
+                                                        </button>
+                                                    ) : (
+                                                        <div className="col-span-2 md:col-span-4 flex gap-2">
+                                                            <input type="text" value={newCustomSubject} onChange={(e) => setNewCustomSubject(e.target.value)} placeholder="Enter subject name" className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSubject())} />
+                                                            <button type="button" onClick={handleAddCustomSubject} className="px-4 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all">Add</button>
+                                                            <button type="button" onClick={() => { setShowCustomSubject(false); setNewCustomSubject(''); }} className="px-4 py-3 rounded-lg bg-gray-100 text-gray-700 font-inter font-medium hover:bg-gray-200 transition-all">Cancel</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {formData.subjects.filter(s => !SUBJECTS.includes(s)).length > 0 && (
+                                                    <div className="mt-3 flex flex-wrap gap-2">
+                                                        {formData.subjects.filter(s => !SUBJECTS.includes(s)).map((subject) => (
+                                                            <div key={subject} className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#FF6B35] text-white rounded-lg font-inter text-sm">
+                                                                {subject}
+                                                                <button type="button" onClick={() => handleRemoveSubject(subject)} className="hover:bg-white/20 rounded-full p-0.5 transition-colors">
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-3">Teaching Experience</label>
+                                                {formData.experiences.map((experience, index) => (
+                                                    <div key={index} className="mb-6 p-6 border-2 border-gray-200 rounded-lg relative">
+                                                        {formData.experiences.length > 1 && (
+                                                            <button type="button" onClick={() => handleRemoveExperience(index)} className="absolute top-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        <div className="space-y-4">
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Post/Position</label>
+                                                                    <input type="text" value={experience.post} onChange={(e) => handleExperienceChange(index, 'post', e.target.value)} placeholder="e.g. Mathematics Tutor" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute/Organization</label>
+                                                                    <input type="text" value={experience.institute} onChange={(e) => handleExperienceChange(index, 'institute', e.target.value)} placeholder="e.g. Private Tutoring" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                                <div>
+                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute State</label>
+                                                                    <CustomSelect value={experience.instituteState} onChange={(value) => handleExperienceChange(index, 'instituteState', value)} options={stateOptions} placeholder="Select State" searchable />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">From Year</label>
+                                                                    <input type="number" value={experience.fromYear} onChange={(e) => handleExperienceChange(index, 'fromYear', e.target.value)} placeholder="2017" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">To Year</label>
+                                                                    <input
+                                                                        type={experience.currentlyWorking ? "text" : "number"}
+                                                                        value={experience.currentlyWorking ? "Present" : experience.toYear}
+                                                                        onChange={(e) => handleExperienceChange(index, 'toYear', e.target.value)}
+                                                                        placeholder="2020"
+                                                                        min="1950"
+                                                                        max={new Date().getFullYear()}
+                                                                        disabled={experience.currentlyWorking}
+                                                                        className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                                                        required={!experience.currentlyWorking}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 -mt-2 mb-4">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    id={`currently-working-${index}`}
+                                                                    checked={experience.currentlyWorking || false}
+                                                                    onChange={(e) => {
+                                                                        const isChecked = e.target.checked;
+                                                                        handleExperienceChange(index, 'currentlyWorking', isChecked);
+                                                                        if (isChecked) {
+                                                                            handleExperienceChange(index, 'toYear', 'Present');
+                                                                        } else {
+                                                                            handleExperienceChange(index, 'toYear', '');
+                                                                        }
+                                                                    }}
+                                                                    className="w-4 h-4 rounded border-gray-300 text-[#FF6B35] focus:ring-[#FF6B35] focus:ring-2 cursor-pointer"
+                                                                />
+                                                                <label htmlFor={`currently-working-${index}`} className="text-sm text-gray-700 font-inter cursor-pointer select-none">
+                                                                    I currently work here
+                                                                </label>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Description</label>
+                                                                <textarea value={experience.description} onChange={(e) => handleExperienceChange(index, 'description', e.target.value)} rows={3} placeholder="e.g. Provided one-on-one tutoring for JAMB and WAEC candidates with 90% success rate." className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter text-sm" required />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <button type="button" onClick={handleAddExperience} className="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-600 hover:border-[#FF6B35] hover:text-[#FF6B35] font-inter font-medium transition-all flex items-center justify-center gap-2">
+                                                    <Plus className="w-4 h-4" />Add Another Experience
                                                 </button>
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-3">Grade Levels (select at least one)</label>
+                                                <div className="mb-4">
+                                                    <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Primary</p>
+                                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                                                        {GRADE_LEVELS.primary.map((level) => (
+                                                            <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#FF6B35] transition-all">
+                                                                <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]" />
+                                                                <span className="text-sm font-inter text-gray-700">{level}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="mb-4">
+                                                    <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Secondary</p>
+                                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                                                        {GRADE_LEVELS.secondary.map((level) => (
+                                                            <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#FF6B35] transition-all">
+                                                                <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]" />
+                                                                <span className="text-sm font-inter text-gray-700">{level}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-3">Exam Preparation</label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                    {EXAM_TYPES.map((examType) => (
+                                                        <button key={examType} type="button" onClick={() => handleExamTypeToggle(examType)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.examTypes.includes(examType) ? 'bg-[#FF6B35] text-white border-[#FF6B35]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF6B35]'}`}>
+                                                            {examType}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-2">Bio (minimum 200 characters)</label>
+                                                <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter" placeholder="Tell students about yourself, your teaching experience, and what makes you a great tutor..." required />
+                                                <p className={`text-sm mt-2 font-inter ${formData.bio.length < 200 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                    {formData.bio.length}/760 characters {formData.bio.length < 200 && `(${200 - formData.bio.length} more needed)`}
+                                                </p>
+                                            </div>
+
+                                            {/* Validation Helper */}
+                                            {!isStep2Valid && (
+                                                <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                    <p className="text-sm font-inter font-semibold text-yellow-800 mb-2">Please complete the following:</p>
+                                                    <ul className="text-sm text-yellow-700 space-y-1 font-inter">
+                                                        {formData.subjects.length === 0 && <li>• Select at least one subject</li>}
+                                                        {!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) && <li>• Fill all experience fields</li>}
+                                                        {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && <li>• Select at least one grade level or exam type</li>}
+                                                        {formData.bio.length < 200 && <li>• Bio must be at least 200 characters (currently {formData.bio.length})</li>}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {step === 3 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Contact Information</h2>
+                                                        <p className="text-gray-600 font-inter text-sm">Verify your phone number to continue.</p>
+                                                    </div>
+                                                    {!formData.phoneVerified && formData.phone && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setStep(4)}
+                                                            className="text-[#FF6B35] font-inter font-medium hover:underline text-sm"
+                                                        >
+                                                            Skip for now →
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
+                                                <div className="flex gap-3">
+                                                    <input
+                                                        type="tel"
+                                                        value={formData.phone}
+                                                        onChange={(e) => {
+                                                            setFormData({ ...formData, phone: e.target.value });
+                                                            setVerificationSent(false);
+                                                            setFormData(prev => ({ ...prev, phoneVerified: false, verificationCode: '' }));
+                                                        }}
+                                                        disabled={formData.phoneVerified}
+                                                        className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                                        placeholder="+234 800 000 0000"
+                                                        required
+                                                    />
+                                                    {!formData.phoneVerified && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleSendVerificationCode}
+                                                            disabled={isVerifying || !formData.phone}
+                                                            className="px-6 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                                                        >
+                                                            {isVerifying ? 'Sending...' : verificationSent ? 'Resend Code' : 'Send Code'}
+                                                        </button>
+                                                    )}
+                                                    {formData.phoneVerified && (
+                                                        <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border border-green-200 rounded-lg">
+                                                            <Check className="w-5 h-5 text-green-600" />
+                                                            <span className="text-sm font-inter font-medium text-green-700">Verified</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-gray-500 mt-2 font-inter">Enter your phone number in international format (e.g., +234...)</p>
+                                            </div>
+
+                                            {verificationSent && !formData.phoneVerified && (
+                                                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                                                    <p className="text-sm text-orange-800 font-inter mb-4">
+                                                        We've sent a 6-digit verification code to {formData.phone}
+                                                    </p>
+                                                    <div className="flex gap-3">
+                                                        <input
+                                                            type="text"
+                                                            value={formData.verificationCode}
+                                                            onChange={(e) => setFormData({ ...formData, verificationCode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                                                            maxLength={6}
+                                                            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-gray-900 text-center text-lg font-semibold tracking-widest focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
+                                                            placeholder="000000"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleVerifyCode}
+                                                            disabled={isVerifying || formData.verificationCode.length !== 6}
+                                                            className="px-6 py-3 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isVerifying ? 'Verifying...' : 'Verify'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {verificationError && (
+                                                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                                                    <p className="text-sm text-red-600 font-inter">{verificationError}</p>
+                                                </div>
+                                            )}
+
+                                            {!formData.phoneVerified && (
+                                                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                                                    <p className="text-sm text-orange-800 font-inter">
+                                                        <span className="font-semibold">Optional:</span> Phone verification helps build trust with students. You can skip this step and verify later from your dashboard.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {step === 4 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Verification</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Upload documents to verify your expertise. Approved tutors earn 3x more.</p>
+                                            </div>
+
+                                            {/* Degree Certificate */}
+                                            <DraftFileInput
+                                                fileType="degree_certificate"
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                maxSize={5 * 1024 * 1024}
+                                                label="Degree Certificate"
+                                                description="Upload your university degree or teaching certificate (PDF, JPG, PNG - Max 5MB)"
+                                                value={formData.degreeCertificate}
+                                                draftMetadata={draftMetadata.degree_certificate}
+                                                onChange={(file) => setFormData({ ...formData, degreeCertificate: file })}
+                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'degree_certificate')}
+                                                authUserId={user?.id || ''}
+                                            />
+
+                                            {/* Government ID */}
+                                            <DraftFileInput
+                                                fileType="government_id"
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                maxSize={5 * 1024 * 1024}
+                                                label="Government ID (NIN/Passport)"
+                                                description="Upload a valid government-issued ID (NIN, Driver's License, Passport - Max 5MB)"
+                                                value={formData.governmentId}
+                                                draftMetadata={draftMetadata.government_id}
+                                                onChange={(file) => setFormData({ ...formData, governmentId: file })}
+                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'government_id')}
+                                                authUserId={user?.id || ''}
+                                            />
+
+                                            {/* NYSC Certificate (Optional) */}
+                                            <DraftFileInput
+                                                fileType="nysc_certificate"
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                maxSize={5 * 1024 * 1024}
+                                                label="NYSC Certificate (Optional)"
+                                                description="Upload your NYSC discharge certificate if applicable (Max 5MB)"
+                                                value={formData.nyscCertificate}
+                                                draftMetadata={draftMetadata.nysc_certificate}
+                                                onChange={(file) => setFormData({ ...formData, nyscCertificate: file })}
+                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'nysc_certificate')}
+                                                authUserId={user?.id || ''}
+                                            />
+                                        </div>
+                                    )}
+                                    {step === 5 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Profile Media</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Parents trust tutors they can see and hear.</p>
+                                            </div>
+
+                                            {/* Profile Photo */}
+                                            <ProfilePhotoInput
+                                                value={formData.profilePhoto}
+                                                draftMetadata={draftMetadata.profile_photo}
+                                                onChange={(file) => setFormData({ ...formData, profilePhoto: file })}
+                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'profile_photo')}
+                                                authUserId={user?.id || ''}
+                                            />
+
+                                            {/* Intro Video */}
+                                            <div>
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <label className="block text-gray-700 font-inter font-semibold">Intro Video (2 min)</label>
+                                                    <span className="text-xs font-inter font-semibold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">Highly Recommended</span>
+                                                </div>
+
+                                                {/* Draft restoration UI for intro video */}
+                                                {draftMetadata.intro_video && !formData.introVideo && (
+                                                    <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg mb-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-orange-900">
+                                                                    Draft found: {draftMetadata.intro_video.original_filename}
+                                                                </p>
+                                                                <p className="text-xs text-orange-700">
+                                                                    Uploaded {new Date(draftMetadata.intro_video.uploaded_at).toLocaleDateString()}
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDraftRestore(draftMetadata.intro_video!, 'intro_video')}
+                                                                className="px-3 py-1 text-sm text-white rounded transition-colors"
+                                                                style={{ backgroundColor: themeColor }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FF8C5A'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = themeColor}
+                                                            >
+                                                                Restore
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="p-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 text-center relative">
+                                                    {formData.introVideo ? (
+                                                        <div className="space-y-3">
+                                                            {/* Action Buttons at Top */}
+                                                            <div className="flex items-center justify-center gap-3 mb-4 relative z-20">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setShowVideoModal(true)}
+                                                                    className="px-4 py-2 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all text-sm"
+                                                                >
+                                                                    Preview Video
+                                                                </button>
+                                                                <label className="cursor-pointer">
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="video/*"
+                                                                        onChange={async (e) => {
+                                                                            const file = e.target.files?.[0];
+                                                                            if (file && file.size <= 100 * 1024 * 1024) {
+                                                                                setFormData({ ...formData, introVideo: file });
+                                                                                await handleIntroVideoUpload(file);
+                                                                            } else if (file) {
+                                                                                toast.error('File too large', {
+                                                                                    description: 'Video must be less than 100MB',
+                                                                                    duration: 5000,
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                        className="hidden"
+                                                                    />
+                                                                    <span className="px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#FF6B35] hover:text-[#FF6B35] transition-all inline-block text-sm">Change Video</span>
+                                                                </label>
+                                                            </div>
+                                                            {/* Video Thumbnail with Play Button */}
+                                                            <div
+                                                                className="relative w-full h-64 bg-black rounded-lg overflow-hidden cursor-pointer group border-2 border-dashed border-gray-400"
+                                                                onClick={() => setShowVideoModal(true)}
+                                                            >
+                                                                <video
+                                                                    src={URL.createObjectURL(formData.introVideo)}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
+                                                                    <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                                        <svg className="w-8 h-8 text-[#FF6B35] ml-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                                                                        </svg>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-sm text-green-600 font-inter flex items-center justify-center gap-2">
+                                                                <Check className="w-4 h-4" />
+                                                                {formData.introVideo.name}
+                                                            </p>
+                                                        </div>
+                                                    ) : isRecording ? (
+                                                        <div className="space-y-4">
+                                                            {/* Live Camera Preview - Full Width */}
+                                                            <div className="relative w-full">
+                                                                <video
+                                                                    ref={liveVideoRef}
+                                                                    autoPlay
+                                                                    muted
+                                                                    playsInline
+                                                                    className="w-full h-96 bg-black rounded-lg object-cover border-2 border-dashed border-red-400"
+                                                                />
+                                                                <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full z-10">
+                                                                    <div className="w-3 h-3 rounded-full bg-white animate-pulse"></div>
+                                                                    <span className="text-sm font-inter font-semibold">REC {recordingTime}s</span>
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-sm text-gray-600 font-inter">Recording... {recordingTime}s / 120s</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={stopRecording}
+                                                                className="px-6 py-2.5 rounded-lg bg-red-500 text-white font-inter font-medium hover:bg-red-600 transition-all"
+                                                            >
+                                                                Stop Recording
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                            </svg>
+                                                            <h3 className="font-inter font-semibold text-gray-900 mb-2">Record a quick intro</h3>
+                                                            <p className="text-sm text-gray-500 font-inter mb-4">Introduce yourself, your subjects, and why you love teaching.</p>
+                                                            <div className="flex items-center justify-center gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={startRecording}
+                                                                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-inter font-medium hover:bg-gray-800 transition-all flex items-center gap-2"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                    Record Now
+                                                                </button>
+                                                                <label className="cursor-pointer">
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="video/*"
+                                                                        onChange={async (e) => {
+                                                                            const file = e.target.files?.[0];
+                                                                            if (file && file.size <= 100 * 1024 * 1024) {
+                                                                                setFormData({ ...formData, introVideo: file });
+                                                                                await handleIntroVideoUpload(file);
+                                                                            } else if (file) {
+                                                                                toast.error('File too large', {
+                                                                                    description: 'Video must be less than 100MB',
+                                                                                    duration: 5000,
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                        className="hidden"
+                                                                    />
+                                                                    <span className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#FF6B35] hover:text-[#FF6B35] transition-all inline-block">
+                                                                        Upload File
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     )}
 
-                                    <div className="p-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 text-center relative">
-                                        {formData.introVideo ? (
-                                            <div className="space-y-3">
-                                                {/* Action Buttons at Top */}
-                                                <div className="flex items-center justify-center gap-3 mb-4 relative z-20">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowVideoModal(true)}
-                                                        className="px-4 py-2 rounded-lg bg-[#FF6B35] text-white font-inter font-medium hover:bg-[#FF6B35]/90 transition-all text-sm"
-                                                    >
-                                                        Preview Video
-                                                    </button>
-                                                    <label className="cursor-pointer">
-                                                        <input
-                                                            type="file"
-                                                            accept="video/*"
-                                                            onChange={async (e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file && file.size <= 100 * 1024 * 1024) {
-                                                                    setFormData({ ...formData, introVideo: file });
-                                                                    await handleIntroVideoUpload(file);
-                                                                } else if (file) {
-                                                                    toast.error('File too large', {
-                                                                        description: 'Video must be less than 100MB',
-                                                                        duration: 5000,
-                                                                    });
-                                                                }
-                                                            }}
-                                                            className="hidden"
-                                                        />
-                                                        <span className="px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#FF6B35] hover:text-[#FF6B35] transition-all inline-block text-sm">Change Video</span>
-                                                    </label>
+                                    {/* Step 6: Payout Details */}
+                                    {step === 6 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Payout Details</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Where should we send your earnings?</p>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-semibold mb-2">Bank Name</label>
+                                                <CustomSelect
+                                                    value={formData.bankName}
+                                                    onChange={(value) => setFormData({ ...formData, bankName: value })}
+                                                    options={NIGERIAN_BANKS}
+                                                    placeholder="Select Bank"
+                                                    searchable
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-gray-700 font-inter font-semibold mb-2">Account Number</label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.accountNumber}
+                                                    onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                                                    maxLength={10}
+                                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
+                                                    placeholder="0123456789"
+                                                    required
+                                                />
+
+                                                {formData.firstName && formData.lastName && (
+                                                    <div className="mt-3 p-4 bg-orange-50 border border-orange-200 rounded-lg flex items-center gap-3">
+                                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border-3" style={{ backgroundColor: `${themeColor}E6`, borderColor: themeColor }}>
+                                                            <Check className="w-5 h-5 text-white" strokeWidth={3} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm text-orange-800 font-inter font-semibold mb-1">Account Name</p>
+                                                            <p className="text-base text-orange-900 font-inter font-bold">{(formData.firstName + ' ' + formData.lastName).toUpperCase()}</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Step 7: Platform Rules */}
+                                    {step === 7 && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Platform Rules</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Please review our professional code of conduct.</p>
+                                            </div>
+
+                                            <div className="space-y-6">
+                                                <div className="flex gap-4">
+                                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                                                        <span className="text-gray-700 font-inter font-semibold">1</span>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">15% Platform Fee:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">SabiLearn charges a service fee on completed lessons to maintain the platform and marketing.</p>
+                                                    </div>
                                                 </div>
-                                                {/* Video Thumbnail with Play Button */}
-                                                <div
-                                                    className="relative w-full h-64 bg-black rounded-lg overflow-hidden cursor-pointer group border-2 border-dashed border-gray-400"
-                                                    onClick={() => setShowVideoModal(true)}
-                                                >
-                                                    <video
-                                                        src={URL.createObjectURL(formData.introVideo)}
-                                                        className="w-full h-full object-cover"
+
+                                                <div className="flex gap-4">
+                                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                                                        <span className="text-gray-700 font-inter font-semibold">2</span>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">No Off-Platform Payments:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">Accepting direct payments from parents will lead to immediate permanent ban.</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-4">
+                                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                                                        <span className="text-gray-700 font-inter font-semibold">3</span>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">Professionalism:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">Lateness or no-shows for scheduled lessons are strictly penalized.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-8 p-4 bg-gray-50 border-2 border-gray-200 rounded-lg">
+                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={agreedToTerms}
+                                                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                                                        className="mt-1 w-5 h-5 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]"
                                                     />
-                                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
-                                                        <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                            <svg className="w-8 h-8 text-[#FF6B35] ml-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                                                    <span className="text-gray-700 font-inter text-sm">
+                                                        I have read and agree to the <a href="#" className="text-[#FF6B35] underline font-medium">Terms of Service</a> and <a href="#" className="text-[#FF6B35] underline font-medium">Code of Conduct</a>.
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Step 8: Review Application */}
+                                    {step === 8 && !isSubmitted && (
+                                        <div className="space-y-6">
+                                            <div className="mb-6">
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Review Application</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Double check your details before submitting.</p>
+                                            </div>
+
+                                            {/* Personal Information Card */}
+                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Personal Information</h3>
+                                                </div>
+                                                <div className="flex items-start gap-6">
+                                                    <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-gray-300">
+                                                        {profilePhotoPreviewUrl ? (
+                                                            <img src={profilePhotoPreviewUrl} alt="Profile" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                             </svg>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Full Name</p>
+                                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.firstName} {formData.lastName}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Display Name</p>
+                                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.displayName}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Gender</p>
+                                                            <p className="text-base font-inter text-gray-900">{formData.gender}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Date of Birth</p>
+                                                            <p className="text-base font-inter text-gray-900">{formData.dateOfBirth}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Location</p>
+                                                            <p className="text-base font-inter text-gray-900">{formData.lga}, {formData.state}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Phone</p>
+                                                            <p className="text-base font-inter text-gray-900">{formData.phone}</p>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <p className="text-sm text-green-600 font-inter flex items-center justify-center gap-2">
-                                                    <Check className="w-4 h-4" />
-                                                    {formData.introVideo.name}
-                                                </p>
                                             </div>
-                                        ) : isRecording ? (
-                                            <div className="space-y-4">
-                                                {/* Live Camera Preview - Full Width */}
-                                                <div className="relative w-full">
-                                                    <video
-                                                        ref={liveVideoRef}
-                                                        autoPlay
-                                                        muted
-                                                        playsInline
-                                                        className="w-full h-96 bg-black rounded-lg object-cover border-2 border-dashed border-red-400"
-                                                    />
-                                                    <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full z-10">
-                                                        <div className="w-3 h-3 rounded-full bg-white animate-pulse"></div>
-                                                        <span className="text-sm font-inter font-semibold">REC {recordingTime}s</span>
+
+                                            {/* Teaching Details Card */}
+                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Teaching Details</h3>
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Subjects</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {formData.subjects.map((subject, index) => (
+                                                                <span key={index} className="px-3 py-1.5 bg-[#FF6B35]/10 text-[#FF6B35] rounded-lg text-sm font-inter font-medium">
+                                                                    {subject}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Grade Levels</p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {formData.gradeLevels.map((level, index) => (
+                                                                    <span key={index} className="px-3 py-1 bg-orange-50 text-orange-700 rounded-lg text-sm font-inter">
+                                                                        {level}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Exam Preparation</p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {formData.examTypes.map((exam, index) => (
+                                                                    <span key={index} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-lg text-sm font-inter">
+                                                                        {exam}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Bio</p>
+                                                        <p className="text-sm font-inter text-gray-700 leading-relaxed">{formData.bio}</p>
                                                     </div>
                                                 </div>
-                                                <p className="text-sm text-gray-600 font-inter">Recording... {recordingTime}s / 120s</p>
-                                                <button
-                                                    type="button"
-                                                    onClick={stopRecording}
-                                                    className="px-6 py-2.5 rounded-lg bg-red-500 text-white font-inter font-medium hover:bg-red-600 transition-all"
-                                                >
-                                                    Stop Recording
-                                                </button>
                                             </div>
-                                        ) : (
-                                            <>
-                                                <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                </svg>
-                                                <h3 className="font-inter font-semibold text-gray-900 mb-2">Record a quick intro</h3>
-                                                <p className="text-sm text-gray-500 font-inter mb-4">Introduce yourself, your subjects, and why you love teaching.</p>
-                                                <div className="flex items-center justify-center gap-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={startRecording}
-                                                        className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-inter font-medium hover:bg-gray-800 transition-all flex items-center gap-2"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+
+                                            {/* Experience Card */}
+                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                         </svg>
-                                                        Record Now
-                                                    </button>
-                                                    <label className="cursor-pointer">
-                                                        <input
-                                                            type="file"
-                                                            accept="video/*"
-                                                            onChange={async (e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file && file.size <= 100 * 1024 * 1024) {
-                                                                    setFormData({ ...formData, introVideo: file });
-                                                                    await handleIntroVideoUpload(file);
-                                                                } else if (file) {
-                                                                    toast.error('File too large', {
-                                                                        description: 'Video must be less than 100MB',
-                                                                        duration: 5000,
-                                                                    });
-                                                                }
-                                                            }}
-                                                            className="hidden"
-                                                        />
-                                                        <span className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#FF6B35] hover:text-[#FF6B35] transition-all inline-block">
-                                                            Upload File
-                                                        </span>
-                                                    </label>
+                                                    </div>
+                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Experience</h3>
                                                 </div>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                                                <div className="space-y-4">
+                                                    {formData.experiences.map((exp, index) => (
+                                                        <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                                            <div className="flex items-start justify-between mb-2">
+                                                                <div>
+                                                                    <p className="font-inter font-semibold text-gray-900">{exp.post}</p>
+                                                                    <p className="text-sm font-inter text-gray-600">{exp.institute}, {exp.instituteState}</p>
+                                                                </div>
+                                                                <span className="text-xs font-inter text-gray-500 whitespace-nowrap">{exp.fromYear} - {exp.toYear}</span>
+                                                            </div>
+                                                            <p className="text-sm font-inter text-gray-700">{exp.description}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
 
-                        {/* Step 6: Payout Details */}
-                        {step === 6 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Payout Details</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Where should we send your earnings?</p>
-                                </div>
+                                            {/* Verification & Documents Card */}
+                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                        <Check className="w-5 h-5 text-[#FF6B35]" />
+                                                    </div>
+                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Verification & Documents</h3>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                                        <div>
+                                                            <p className="text-sm font-inter font-semibold text-green-900">Degree Certificate</p>
+                                                            <p className="text-xs font-inter text-green-700">{formData.degreeCertificate?.name}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                                        <div>
+                                                            <p className="text-sm font-inter font-semibold text-green-900">Government ID</p>
+                                                            <p className="text-xs font-inter text-green-700">{formData.governmentId?.name}</p>
+                                                        </div>
+                                                    </div>
+                                                    {formData.nyscCertificate && (
+                                                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                            <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                                            <div>
+                                                                <p className="text-sm font-inter font-semibold text-green-900">NYSC Certificate</p>
+                                                                <p className="text-xs font-inter text-green-700">{formData.nyscCertificate?.name}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                                                        <div>
+                                                            <p className="text-sm font-inter font-semibold text-green-900">Profile Photo</p>
+                                                            <p className="text-xs font-inter text-green-700">{formData.profilePhoto ? 'Uploaded' : 'Not uploaded'}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-semibold mb-2">Bank Name</label>
-                                    <CustomSelect
-                                        value={formData.bankName}
-                                        onChange={(value) => setFormData({ ...formData, bankName: value })}
-                                        options={[
-                                            { value: '9mobile 9Payment Service Bank', label: '9mobile 9Payment Service Bank' },
-                                            { value: 'Abbey Mortgage Bank', label: 'Abbey Mortgage Bank' },
-                                            { value: 'Above Only MFB', label: 'Above Only MFB' },
-                                            { value: 'Access Bank', label: 'Access Bank' },
-                                            { value: 'Access Bank (Diamond)', label: 'Access Bank (Diamond)' },
-                                            { value: 'Accion Microfinance Bank', label: 'Accion Microfinance Bank' },
-                                            { value: 'Ahmadu Bello University Microfinance Bank', label: 'Ahmadu Bello University Microfinance Bank' },
-                                            { value: 'Airtel Smartcash PSB', label: 'Airtel Smartcash PSB' },
-                                            { value: 'AKU Microfinance Bank', label: 'AKU Microfinance Bank' },
-                                            { value: 'ALAT by WEMA', label: 'ALAT by WEMA' },
-                                            { value: 'Amju Unique MFB', label: 'Amju Unique MFB' },
-                                            { value: 'ASO Savings and Loans', label: 'ASO Savings and Loans' },
-                                            { value: 'Astrapolaris MFB', label: 'Astrapolaris MFB' },
-                                            { value: 'Bainescredit MFB', label: 'Bainescredit MFB' },
-                                            { value: 'Bowen Microfinance Bank', label: 'Bowen Microfinance Bank' },
-                                            { value: 'Carbon', label: 'Carbon' },
-                                            { value: 'CEMCS Microfinance Bank', label: 'CEMCS Microfinance Bank' },
-                                            { value: 'Chanelle Microfinance Bank Limited', label: 'Chanelle Microfinance Bank Limited' },
-                                            { value: 'Citibank Nigeria', label: 'Citibank Nigeria' },
-                                            { value: 'Coronation Merchant Bank', label: 'Coronation Merchant Bank' },
-                                            { value: 'Ecobank Nigeria', label: 'Ecobank Nigeria' },
-                                            { value: 'Ekondo Microfinance Bank', label: 'Ekondo Microfinance Bank' },
-                                            { value: 'Eyowo', label: 'Eyowo' },
-                                            { value: 'Fairmoney Microfinance Bank', label: 'Fairmoney Microfinance Bank' },
-                                            { value: 'Fidelity Bank', label: 'Fidelity Bank' },
-                                            { value: 'Firmus MFB', label: 'Firmus MFB' },
-                                            { value: 'First Bank of Nigeria', label: 'First Bank of Nigeria' },
-                                            { value: 'First City Monument Bank', label: 'First City Monument Bank' },
-                                            { value: 'FSDH Merchant Bank Limited', label: 'FSDH Merchant Bank Limited' },
-                                            { value: 'Globus Bank', label: 'Globus Bank' },
-                                            { value: 'GoMoney', label: 'GoMoney' },
-                                            { value: 'Guaranty Trust Bank', label: 'Guaranty Trust Bank' },
-                                            { value: 'Hackman Microfinance Bank', label: 'Hackman Microfinance Bank' },
-                                            { value: 'Hasal Microfinance Bank', label: 'Hasal Microfinance Bank' },
-                                            { value: 'Heritage Bank', label: 'Heritage Bank' },
-                                            { value: 'Ibile Microfinance Bank', label: 'Ibile Microfinance Bank' },
-                                            { value: 'Infinity MFB', label: 'Infinity MFB' },
-                                            { value: 'Jaiz Bank', label: 'Jaiz Bank' },
-                                            { value: 'Keystone Bank', label: 'Keystone Bank' },
-                                            { value: 'Kuda Bank', label: 'Kuda Bank' },
-                                            { value: 'Lagos Building Investment Company Plc.', label: 'Lagos Building Investment Company Plc.' },
-                                            { value: 'Links MFB', label: 'Links MFB' },
-                                            { value: 'Living Trust Mortgage Bank', label: 'Living Trust Mortgage Bank' },
-                                            { value: 'Lotus Bank', label: 'Lotus Bank' },
-                                            { value: 'Mayfair MFB', label: 'Mayfair MFB' },
-                                            { value: 'Mint MFB', label: 'Mint MFB' },
-                                            { value: 'Moniepoint MFB', label: 'Moniepoint MFB' },
-                                            { value: 'MTN Momo PSB', label: 'MTN Momo PSB' },
-                                            { value: 'Optimus Bank', label: 'Optimus Bank' },
-                                            { value: 'Paga', label: 'Paga' },
-                                            { value: 'PalmPay', label: 'PalmPay' },
-                                            { value: 'Parallex Bank', label: 'Parallex Bank' },
-                                            { value: 'Parkway - ReadyCash', label: 'Parkway - ReadyCash' },
-                                            { value: 'Paycom', label: 'Paycom' },
-                                            { value: 'Petra Mircofinance Bank Plc', label: 'Petra Mircofinance Bank Plc' },
-                                            { value: 'Polaris Bank', label: 'Polaris Bank' },
-                                            { value: 'Providus Bank', label: 'Providus Bank' },
-                                            { value: 'QuickFund MFB', label: 'QuickFund MFB' },
-                                            { value: 'Rand Merchant Bank', label: 'Rand Merchant Bank' },
-                                            { value: 'Refuge Mortgage Bank', label: 'Refuge Mortgage Bank' },
-                                            { value: 'Renmoney MFB', label: 'Renmoney MFB' },
-                                            { value: 'Rubies MFB', label: 'Rubies MFB' },
-                                            { value: 'Sparkle Microfinance Bank', label: 'Sparkle Microfinance Bank' },
-                                            { value: 'Stanbic IBTC Bank', label: 'Stanbic IBTC Bank' },
-                                            { value: 'Standard Chartered Bank', label: 'Standard Chartered Bank' },
-                                            { value: 'Sterling Bank', label: 'Sterling Bank' },
-                                            { value: 'Suntrust Bank', label: 'Suntrust Bank' },
-                                            { value: 'TAJ Bank', label: 'TAJ Bank' },
-                                            { value: 'Tangerine Money', label: 'Tangerine Money' },
-                                            { value: 'TCF MFB', label: 'TCF MFB' },
-                                            { value: 'Titan Bank', label: 'Titan Bank' },
-                                            { value: 'Titan Paystack', label: 'Titan Paystack' },
-                                            { value: 'Union Bank of Nigeria', label: 'Union Bank of Nigeria' },
-                                            { value: 'United Bank For Africa', label: 'United Bank For Africa' },
-                                            { value: 'Unity Bank', label: 'Unity Bank' },
-                                            { value: 'VFD Microfinance Bank Limited', label: 'VFD Microfinance Bank Limited' },
-                                            { value: 'Wema Bank', label: 'Wema Bank' },
-                                            { value: 'Zenith Bank', label: 'Zenith Bank' },
-                                        ]}
-                                        placeholder="Select Bank"
-                                        searchable
-                                    />
-                                </div>
+                                            {/* Media Preview Card */}
+                                            {formData.introVideo && (
+                                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                    <div className="flex items-center gap-3 mb-4">
+                                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                            <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                            </svg>
+                                                        </div>
+                                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Intro Video</h3>
+                                                    </div>
+                                                    <div className="relative w-full h-64 bg-gray-900 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 group cursor-pointer" onClick={() => setShowVideoModal(true)}>
+                                                        <video
+                                                            src={URL.createObjectURL(formData.introVideo)}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
+                                                            <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                                                <svg className="w-8 h-8 text-[#FF6B35] ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                                                    <path d="M8 5v14l11-7z" />
+                                                                </svg>
+                                                            </div>
+                                                        </div>
+                                                        <div className="absolute bottom-4 left-4 right-4">
+                                                            <p className="text-white font-inter text-sm font-semibold drop-shadow-lg">Click to preview your intro video</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
 
-                                <div>
-                                    <label className="block text-gray-700 font-inter font-semibold mb-2">Account Number</label>
-                                    <input
-                                        type="text"
-                                        value={formData.accountNumber}
-                                        onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                                        maxLength={10}
-                                        className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter"
-                                        placeholder="0123456789"
-                                        required
-                                    />
+                                            {/* Payout Details Card */}
+                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                                                <div className="flex items-center gap-3 mb-4">
+                                                    <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Payout Details</h3>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Bank Name</p>
+                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.bankName}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Number</p>
+                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.accountNumber}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Name</p>
+                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.accountName}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                    {formData.firstName && formData.lastName && (
-                                        <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
-                                            <Check className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                                            <div>
-                                                <p className="text-sm text-blue-800 font-inter font-semibold mb-1">Account Name</p>
-                                                <p className="text-base text-blue-900 font-inter font-bold">{(formData.firstName + ' ' + formData.lastName).toUpperCase()}</p>
+                                            <div className="text-center p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                                                <p className="text-sm text-orange-800 font-inter">
+                                                    <span className="font-semibold">Important:</span> By submitting, you confirm all provided information is accurate and complete.
+                                                </p>
                                             </div>
                                         </div>
                                     )}
-                                </div>
-                            </div>
-                        )}
 
-                        {/* Step 7: Platform Rules */}
-                        {step === 7 && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Platform Rules</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Please review our professional code of conduct.</p>
-                                </div>
+                                    {/* Success Screen */}
+                                    {isSubmitted && (
+                                        <div className="text-center py-12">
+                                            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+                                                <Check className="w-12 h-12 text-green-600" />
+                                            </div>
+                                            <h2 className="text-3xl md:text-4xl font-outfit font-bold text-gray-900 mb-4">Application Submitted!</h2>
+                                            <p className="text-gray-600 font-inter mb-2">
+                                                Thank you, {formData.firstName}. Our team will review your credentials within <span className="font-semibold text-gray-900">24-48 hours</span>.
+                                            </p>
 
-                                <div className="space-y-6">
-                                    <div className="flex gap-4">
-                                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                            <span className="text-gray-700 font-inter font-semibold">1</span>
-                                        </div>
-                                        <div>
-                                            <h3 className="font-inter font-semibold text-gray-900 mb-1">15% Platform Fee:</h3>
-                                            <p className="text-gray-600 font-inter text-sm">SabiLearn charges a service fee on completed lessons to maintain the platform and marketing.</p>
-                                        </div>
-                                    </div>
+                                            <div className="max-w-md mx-auto mt-8 p-6 bg-white border border-gray-200 rounded-lg">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <span className="text-sm font-inter font-semibold text-gray-700">Status</span>
+                                                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-inter font-semibold rounded-full">PENDING REVIEW</span>
+                                                </div>
+                                                <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                                                    <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '50%' }}></div>
+                                                </div>
+                                                <p className="text-sm text-gray-600 font-inter">We'll notify you via email once approved.</p>
+                                            </div>
 
-                                    <div className="flex gap-4">
-                                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                            <span className="text-gray-700 font-inter font-semibold">2</span>
+                                            <button
+                                                onClick={() => router.push('/dashboard/tutor')}
+                                                className="mt-8 px-8 py-3 rounded-lg bg-gray-900 text-white font-inter font-semibold hover:bg-gray-800 transition-all"
+                                            >
+                                                Go to Dashboard
+                                            </button>
                                         </div>
-                                        <div>
-                                            <h3 className="font-inter font-semibold text-gray-900 mb-1">No Off-Platform Payments:</h3>
-                                            <p className="text-gray-600 font-inter text-sm">Accepting direct payments from parents will lead to immediate permanent ban.</p>
-                                        </div>
-                                    </div>
+                                    )}
 
-                                    <div className="flex gap-4">
-                                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                            <span className="text-gray-700 font-inter font-semibold">3</span>
+                                    {/* Video Modal */}
+                                    {showVideoModal && formData.introVideo && (
+                                        <div
+                                            className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 overflow-y-auto"
+                                            style={{ zIndex: 9999 }}
+                                            onClick={() => setShowVideoModal(false)}
+                                        >
+                                            <div
+                                                className="relative bg-black rounded-lg max-w-2xl w-full my-8"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {/* Close button inside the modal */}
+                                                <button
+                                                    onClick={() => setShowVideoModal(false)}
+                                                    className="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors flex items-center gap-2 bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-black/70"
+                                                >
+                                                    <span className="font-inter text-sm font-medium">Close</span>
+                                                    <X className="w-5 h-5" />
+                                                </button>
+                                                <video
+                                                    ref={videoRef}
+                                                    src={URL.createObjectURL(formData.introVideo)}
+                                                    controls
+                                                    autoPlay
+                                                    className="w-full rounded-lg"
+                                                />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="font-inter font-semibold text-gray-900 mb-1">Professionalism:</h3>
-                                            <p className="text-gray-600 font-inter text-sm">Lateness or no-shows for scheduled lessons are strictly penalized.</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-8 p-4 bg-gray-50 border-2 border-gray-200 rounded-lg">
-                                    <label className="flex items-start gap-3 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={agreedToTerms}
-                                            onChange={(e) => setAgreedToTerms(e.target.checked)}
-                                            className="mt-1 w-5 h-5 text-[#FF6B35] border-gray-300 rounded focus:ring-[#FF6B35]"
-                                        />
-                                        <span className="text-gray-700 font-inter text-sm">
-                                            I have read and agree to the <a href="#" className="text-[#FF6B35] underline font-medium">Terms of Service</a> and <a href="#" className="text-[#FF6B35] underline font-medium">Code of Conduct</a>.
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Step 8: Review Application */}
-                        {step === 8 && !isSubmitted && (
-                            <div className="space-y-6">
-                                <div className="mb-6">
-                                    <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Review Application</h2>
-                                    <p className="text-gray-600 font-inter text-sm">Double check your details before submitting.</p>
-                                </div>
-
-                                {/* Personal Information Card */}
-                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                            <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Personal Information</h3>
-                                    </div>
-                                    <div className="flex items-start gap-6">
-                                        <div className="w-24 h-24 rounded-xl bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-gray-300">
-                                            {formData.profilePhoto ? (
-                                                <img src={URL.createObjectURL(formData.profilePhoto)} alt="Profile" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    )}
+                                    {error && (
+                                        <div className="mt-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                                            <div className="flex items-start gap-3">
+                                                <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                 </svg>
+                                                <div className="flex-1">
+                                                    <p className="text-red-800 font-inter font-semibold mb-1">Please complete the following:</p>
+                                                    <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </form>
+                                {!isSubmitted && (
+                                    <div className="flex justify-between items-center relative z-[100]">
+                                        <button type="button" onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1 || isSubmitting} className={`px-6 py-3 rounded-lg font-inter font-medium transition-all ${step === 1 ? 'bg-white/50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-white/90 shadow-md cursor-pointer'}`}>Back</button>
+                                        <div className="flex items-center gap-3">
+                                            {step === 3 && !formData.phoneVerified && formData.phone && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setStep(step + 1)}
+                                                    className="px-6 py-3 rounded-lg font-inter font-medium transition-all text-gray-600 hover:text-gray-800 underline"
+                                                >
+                                                    Skip for now
+                                                </button>
+                                            )}
+                                            {step < 8 ? (
+                                                step === 3 && formData.phoneVerified ? (
+                                                    <button type="button" onClick={() => setStep(step + 1)} className="px-8 py-3 rounded-lg font-inter font-semibold transition-all text-white shadow-lg" style={{ backgroundColor: themeColor }}>Continue</button>
+                                                ) : step === 3 ? null : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setStep(step + 1)}
+                                                        disabled={
+                                                            (step === 1 && !isStep1Valid) ||
+                                                            (step === 2 && !isStep2Valid) ||
+                                                            (step === 4 && !isStep4Valid) ||
+                                                            (step === 5 && !isStep5Valid) ||
+                                                            (step === 6 && !isStep6Valid) ||
+                                                            (step === 7 && !isStep7Valid)
+                                                        }
+                                                        className="px-8 py-3 rounded-lg font-inter font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-white shadow-lg"
+                                                        style={{ backgroundColor: themeColor }}
+                                                    >
+                                                        Continue
+                                                    </button>
+                                                )
+                                            ) : (
+                                                <button type="submit" onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 rounded-lg font-inter font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-white shadow-lg" style={{ backgroundColor: themeColor }}>
+                                                    {isSubmitting ? (<><svg className="animate-spin h-4 w-4 inline mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>Submitting...</>) : ('Submit Application')}
+                                                </button>
                                             )}
                                         </div>
-                                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Full Name</p>
-                                                <p className="text-base font-inter font-semibold text-gray-900">{formData.firstName} {formData.lastName}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Display Name</p>
-                                                <p className="text-base font-inter font-semibold text-gray-900">{formData.displayName}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Gender</p>
-                                                <p className="text-base font-inter text-gray-900">{formData.gender}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Date of Birth</p>
-                                                <p className="text-base font-inter text-gray-900">{formData.dateOfBirth}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Location</p>
-                                                <p className="text-base font-inter text-gray-900">{formData.lga}, {formData.state}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Phone</p>
-                                                <p className="text-base font-inter text-gray-900">{formData.phone}</p>
-                                            </div>
-                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Teaching Details Card */}
-                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                            <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Teaching Details</h3>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Subjects</p>
-                                            <div className="flex flex-wrap gap-2">
-                                                {formData.subjects.map((subject, index) => (
-                                                    <span key={index} className="px-3 py-1.5 bg-[#FF6B35]/10 text-[#FF6B35] rounded-lg text-sm font-inter font-medium">
-                                                        {subject}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Grade Levels</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {formData.gradeLevels.map((level, index) => (
-                                                        <span key={index} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg text-sm font-inter">
-                                                            {level}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Exam Preparation</p>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {formData.examTypes.map((exam, index) => (
-                                                        <span key={index} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-lg text-sm font-inter">
-                                                            {exam}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Bio</p>
-                                            <p className="text-sm font-inter text-gray-700 leading-relaxed">{formData.bio}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Experience Card */}
-                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                            <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Experience</h3>
-                                    </div>
-                                    <div className="space-y-4">
-                                        {formData.experiences.map((exp, index) => (
-                                            <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                                                <div className="flex items-start justify-between mb-2">
-                                                    <div>
-                                                        <p className="font-inter font-semibold text-gray-900">{exp.post}</p>
-                                                        <p className="text-sm font-inter text-gray-600">{exp.institute}, {exp.instituteState}</p>
-                                                    </div>
-                                                    <span className="text-xs font-inter text-gray-500 whitespace-nowrap">{exp.fromYear} - {exp.toYear}</span>
-                                                </div>
-                                                <p className="text-sm font-inter text-gray-700">{exp.description}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Verification & Documents Card */}
-                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                            <Check className="w-5 h-5 text-[#FF6B35]" />
-                                        </div>
-                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Verification & Documents</h3>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                            <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-inter font-semibold text-green-900">Degree Certificate</p>
-                                                <p className="text-xs font-inter text-green-700">{formData.degreeCertificate?.name}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                            <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-inter font-semibold text-green-900">Government ID</p>
-                                                <p className="text-xs font-inter text-green-700">{formData.governmentId?.name}</p>
-                                            </div>
-                                        </div>
-                                        {formData.nyscCertificate && (
-                                            <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                                <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                                <div>
-                                                    <p className="text-sm font-inter font-semibold text-green-900">NYSC Certificate</p>
-                                                    <p className="text-xs font-inter text-green-700">{formData.nyscCertificate?.name}</p>
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                            <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-inter font-semibold text-green-900">Profile Photo</p>
-                                                <p className="text-xs font-inter text-green-700">{formData.profilePhoto ? 'Uploaded' : 'Not uploaded'}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Media Preview Card */}
-                                {formData.introVideo && (
-                                    <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                        <div className="flex items-center gap-3 mb-4">
-                                            <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                                <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-lg font-outfit font-bold text-gray-900">Intro Video</h3>
-                                        </div>
-                                        <div className="relative w-full h-64 bg-gray-900 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 group cursor-pointer" onClick={() => setShowVideoModal(true)}>
-                                            <video
-                                                src={URL.createObjectURL(formData.introVideo)}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
-                                                <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                    <svg className="w-8 h-8 text-[#FF6B35] ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M8 5v14l11-7z" />
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                            <div className="absolute bottom-4 left-4 right-4">
-                                                <p className="text-white font-inter text-sm font-semibold drop-shadow-lg">Click to preview your intro video</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Payout Details Card */}
-                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/10 flex items-center justify-center">
-                                            <svg className="w-5 h-5 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                            </svg>
-                                        </div>
-                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Payout Details</h3>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Bank Name</p>
-                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.bankName}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Number</p>
-                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.accountNumber}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Name</p>
-                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.accountName}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="text-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <p className="text-sm text-blue-800 font-inter">
-                                        <span className="font-semibold">Important:</span> By submitting, you confirm all provided information is accurate and complete.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Success Screen */}
-                        {isSubmitted && (
-                            <div className="text-center py-12">
-                                <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-                                    <Check className="w-12 h-12 text-green-600" />
-                                </div>
-                                <h2 className="text-3xl md:text-4xl font-outfit font-bold text-gray-900 mb-4">Application Submitted!</h2>
-                                <p className="text-gray-600 font-inter mb-2">
-                                    Thank you, {formData.firstName}. Our team will review your credentials within <span className="font-semibold text-gray-900">24-48 hours</span>.
-                                </p>
-
-                                <div className="max-w-md mx-auto mt-8 p-6 bg-white border border-gray-200 rounded-lg">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <span className="text-sm font-inter font-semibold text-gray-700">Status</span>
-                                        <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-inter font-semibold rounded-full">PENDING REVIEW</span>
-                                    </div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                                        <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '50%' }}></div>
-                                    </div>
-                                    <p className="text-sm text-gray-600 font-inter">We'll notify you via email once approved.</p>
-                                </div>
-
-                                <button
-                                    onClick={() => router.push('/dashboard/tutor')}
-                                    className="mt-8 px-8 py-3 rounded-lg bg-gray-900 text-white font-inter font-semibold hover:bg-gray-800 transition-all"
-                                >
-                                    Go to Dashboard
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Video Modal */}
-                        {showVideoModal && formData.introVideo && (
-                            <div
-                                className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 overflow-y-auto"
-                                style={{ zIndex: 9999 }}
-                                onClick={() => setShowVideoModal(false)}
-                            >
-                                <div
-                                    className="relative bg-black rounded-lg max-w-2xl w-full my-8"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {/* Close button inside the modal */}
-                                    <button
-                                        onClick={() => setShowVideoModal(false)}
-                                        className="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors flex items-center gap-2 bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-black/70"
-                                    >
-                                        <span className="font-inter text-sm font-medium">Close</span>
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                    <video
-                                        ref={videoRef}
-                                        src={URL.createObjectURL(formData.introVideo)}
-                                        controls
-                                        autoPlay
-                                        className="w-full rounded-lg"
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        {error && (
-                            <div className="mt-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
-                                <div className="flex items-start gap-3">
-                                    <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <div className="flex-1">
-                                        <p className="text-red-800 font-inter font-semibold mb-1">Please complete the following:</p>
-                                        <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </form>
-                    {!isSubmitted && (
-                        <div className="flex justify-between items-center">
-                            <button type="button" onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1 || isSubmitting} className={`px-6 py-3 rounded-lg font-inter font-medium transition-all ${step === 1 ? 'bg-white/50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-white/90 shadow-md'}`}>Back</button>
-                            <div className="flex items-center gap-3">
-                                {step === 3 && !formData.phoneVerified && formData.phone && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setStep(step + 1)}
-                                        className="px-6 py-3 rounded-lg font-inter font-medium transition-all text-gray-600 hover:text-gray-800 underline"
-                                    >
-                                        Skip for now
-                                    </button>
-                                )}
-                                {step < 8 ? (
-                                    step === 3 && formData.phoneVerified ? (
-                                        <button type="button" onClick={() => setStep(step + 1)} className="px-8 py-3 rounded-lg font-inter font-semibold transition-all text-white shadow-lg" style={{ backgroundColor: themeColor }}>Continue</button>
-                                    ) : step === 3 ? null : (
-                                        <button
-                                            type="button"
-                                            onClick={() => setStep(step + 1)}
-                                            disabled={
-                                                (step === 1 && !isStep1Valid) ||
-                                                (step === 2 && !isStep2Valid) ||
-                                                (step === 4 && !isStep4Valid) ||
-                                                (step === 5 && !isStep5Valid) ||
-                                                (step === 6 && !isStep6Valid) ||
-                                                (step === 7 && !isStep7Valid)
-                                            }
-                                            className="px-8 py-3 rounded-lg font-inter font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-lg"
-                                            style={{ backgroundColor: themeColor }}
-                                        >
-                                            Continue
-                                        </button>
-                                    )
-                                ) : (
-                                    <button type="submit" onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 rounded-lg font-inter font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-lg" style={{ backgroundColor: themeColor }}>
-                                        {isSubmitting ? (<><svg className="animate-spin h-4 w-4 inline mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>Submitting...</>) : ('Submit Application')}
-                                    </button>
                                 )}
                             </div>
                         </div>
-                    )}
-                </div>
-            </div>
-        </div>
+                    </div>
+
+                    {/* Simple Footer */}
+                    <footer className=" py-8 mt-12">
+                        <div className="max-w-7xl mx-auto px-4">
+
+                            {/* 
+                            <div className="flex flex-wrap items-center justify-center gap-6 mb-6 text-sm text-gray-500">
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                    <span className="font-inter">SSL Encrypted</span>
+                                </div>
+                                <span className="text-gray-300">•</span>
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                    </svg>
+                                    <span className="font-inter">NDPR Compliant</span>
+                                </div>
+                            </div>
+
+                            <div className="text-center text-sm text-gray-500 mb-4">
+                                <p className="font-inter">&copy; 2024 SabiLearn Nigeria. All rights reserved.</p>
+                            </div> */}
+
+                            {/* Powered By */}
+                            <div className="text-center text-xs text-gray-400">
+                                <p className="font-inter">Secured by Paystack • Powered by Vercel</p>
+                            </div>
+                        </div>
+                    </footer>
+                </div >
+            </div >
+        </>
     );
 }

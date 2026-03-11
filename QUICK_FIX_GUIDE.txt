@@ -1,0 +1,77 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                  FIX FIND TUTORS PAGE - 2 STEPS                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ STEP 1: RESTART DEV SERVER                                           │
+└──────────────────────────────────────────────────────────────────────┘
+
+  In your terminal:
+  
+  1. Press: Ctrl+C (or Command+C on Mac)
+  2. Run: pnpm dev
+  3. Wait for server to start
+  
+  ✓ This fixes the Supabase connection issue
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ STEP 2: ADD EXPERIENCES COLUMN                                       │
+└──────────────────────────────────────────────────────────────────────┘
+
+  1. Go to: https://supabase.com/dashboard
+  2. Select your project
+  3. Click: SQL Editor (left sidebar)
+  4. Paste this SQL:
+
+     ALTER TABLE tutors 
+     ADD COLUMN IF NOT EXISTS experiences JSONB DEFAULT '[]'::jsonb;
+     
+     CREATE INDEX IF NOT EXISTS idx_tutors_experiences 
+     ON tutors USING GIN (experiences);
+
+  5. Click: Run
+  
+  ✓ This adds the experiences column to store teaching history
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ VERIFY IT WORKS                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+  Visit: http://localhost:3000/find-tutors
+  
+  ✓ Should load tutors (not stuck on "Loading...")
+  ✓ Tutor cards show profile photos
+  ✓ Latest experience displayed
+  ✓ "View Profile" button visible
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+  Still stuck? Run this to check status:
+  
+  ./scripts/check-status.sh
+  
+  Or test API directly:
+  
+  curl http://localhost:3000/api/tutors
+  
+  Should return JSON with tutors array.
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ MORE INFO                                                            │
+└──────────────────────────────────────────────────────────────────────┘
+
+  📖 FIX_FIND_TUTORS_NOW.md - Quick start guide
+  📖 FIND_TUTORS_FIX_SUMMARY.md - Complete details
+  📖 RESTART_DEV_SERVER.md - Restart instructions
+  📄 RUN_IN_SUPABASE_SQL_EDITOR.sql - SQL file to run
+
+
+╔══════════════════════════════════════════════════════════════════════╗
+║  That's it! Restart server + Run SQL = Fixed! 🎉                    ║
+╚══════════════════════════════════════════════════════════════════════╝

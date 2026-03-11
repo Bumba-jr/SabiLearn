@@ -1,4 +1,3 @@
-import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -9,65 +8,62 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
     try {
-        const { userId } = await auth();
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Unauthorized - No auth header' }, { status: 401 });
+        }
 
-        if (!userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized - Invalid token' }, { status: 401 });
         }
 
         const body = await req.json();
-        const { clerkUserId, role } = body;
+        const { authUserId, role } = body;
 
-        // Verify user owns this profile
-        if (userId !== clerkUserId) {
+        if (user.id !== authUserId) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        // Validate role
         if (!['tutor', 'student', 'parent'].includes(role)) {
             return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
         }
 
-        // Check for existing profile
         const { data: existing } = await supabase
             .from('profiles')
             .select('*')
-            .eq('clerk_user_id', clerkUserId)
+            .eq('auth_user_id', authUserId)
             .single();
 
         if (existing) {
-            // If profile exists and onboarding not complete, allow role update
             if (!existing.onboarding_completed) {
                 const { data: updated, error: updateError } = await supabase
                     .from('profiles')
                     .update({ role, updated_at: new Date().toISOString() })
-                    .eq('clerk_user_id', clerkUserId)
+                    .eq('auth_user_id', authUserId)
                     .select()
                     .single();
 
                 if (updateError) {
-                    console.error('Update error:', updateError);
                     return NextResponse.json({ error: updateError.message }, { status: 500 });
                 }
 
-                // Clear any existing onboarding progress when role changes
                 await supabase
                     .from('onboarding_progress')
                     .delete()
-                    .eq('clerk_user_id', clerkUserId);
+                    .eq('auth_user_id', authUserId);
 
                 return NextResponse.json(updated);
             }
-
-            // Profile exists and onboarding complete
             return NextResponse.json(existing);
         }
 
-        // Create new profile
         const { data: newProfile, error: insertError } = await supabase
             .from('profiles')
             .insert({
-                clerk_user_id: clerkUserId,
+                auth_user_id: authUserId,
                 role,
                 onboarding_completed: false,
             })
@@ -75,37 +71,38 @@ export async function POST(req: Request) {
             .single();
 
         if (insertError) {
-            console.error('Insert error:', insertError);
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
         return NextResponse.json(newProfile);
     } catch (error) {
-        console.error('Profile creation error:', error);
-        return NextResponse.json(
-            { error: 'Internal server error' },
-            { status: 500 }
-        );
+        console.error('Profile API error:', error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }
 
 export async function GET(req: Request) {
     try {
-        const { userId } = await auth();
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
 
-        if (!userId) {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+        if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
         const { data: profile, error } = await supabase
             .from('profiles')
             .select('*')
-            .eq('clerk_user_id', userId)
+            .eq('auth_user_id', user.id)
             .single();
 
         if (error) {
             if (error.code === 'PGRST116') {
-                // No profile found
                 return NextResponse.json({ profile: null });
             }
             return NextResponse.json({ error: error.message }, { status: 500 });
@@ -113,10 +110,6 @@ export async function GET(req: Request) {
 
         return NextResponse.json(profile);
     } catch (error) {
-        console.error('Profile fetch error:', error);
-        return NextResponse.json(
-            { error: 'Internal server error' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
     }
 }

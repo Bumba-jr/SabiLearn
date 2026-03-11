@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getServerUser } from '@/lib/auth/supabase-auth';
 import { getDraftById } from '@/lib/db/draft-operations';
 import { generateSignedUrl } from '@/lib/storage/draft-storage';
 
@@ -26,8 +26,8 @@ export async function GET(
         const { draftId } = params;
 
         // Verify authentication
-        const { userId } = await auth();
-        if (!userId) {
+        const user = await getServerUser();
+        if (!user) {
             return NextResponse.json(
                 { error: 'Unauthorized' },
                 { status: 401 }
@@ -35,7 +35,7 @@ export async function GET(
         }
 
         // Get draft metadata with ownership check
-        const draft = await getDraftById(draftId, userId);
+        const draft = await getDraftById(draftId, user.id);
 
         if (!draft) {
             return NextResponse.json(

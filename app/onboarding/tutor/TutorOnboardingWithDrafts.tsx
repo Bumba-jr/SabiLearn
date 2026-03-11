@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useUser } from '@clerk/nextjs';
+import { useAuth } from '@/lib/auth/AuthProvider';
 import { DraftFileInput } from '@/components/onboarding/DraftFileInput';
 import {
     validateDraftsWithServer,
@@ -19,7 +19,7 @@ import { type DraftMetadata, type FileType } from '@/lib/db/draft-operations';
 
 // Add to existing state in TutorOnboardingPage component:
 export function useDraftIntegration() {
-    const { user } = useUser();
+    const { user } = useAuth();
     const [draftMetadata, setDraftMetadata] = useState<Record<FileType, DraftMetadata | null>>({
         degree_certificate: null,
         government_id: null,
@@ -124,7 +124,7 @@ export function Step4WithDrafts({ formData, setFormData, user, draftMetadata, se
                 draftMetadata={draftMetadata.degree_certificate}
                 onChange={(file) => setFormData({ ...formData, degreeCertificate: file })}
                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'degree_certificate')}
-                clerkUserId={user?.id || ''}
+                authUserId={user?.id || ''}
             />
 
             {/* Government ID */}
@@ -138,7 +138,7 @@ export function Step4WithDrafts({ formData, setFormData, user, draftMetadata, se
                 draftMetadata={draftMetadata.government_id}
                 onChange={(file) => setFormData({ ...formData, governmentId: file })}
                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'government_id')}
-                clerkUserId={user?.id || ''}
+                authUserId={user?.id || ''}
             />
 
             {/* NYSC Certificate (Optional) */}
@@ -152,7 +152,7 @@ export function Step4WithDrafts({ formData, setFormData, user, draftMetadata, se
                 draftMetadata={draftMetadata.nysc_certificate}
                 onChange={(file) => setFormData({ ...formData, nyscCertificate: file })}
                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'nysc_certificate')}
-                clerkUserId={user?.id || ''}
+                authUserId={user?.id || ''}
             />
         </div>
     );
@@ -197,7 +197,7 @@ export function Step5WithDrafts({ formData, setFormData, user, draftMetadata }: 
                 draftMetadata={draftMetadata.profile_photo}
                 onChange={(file) => setFormData({ ...formData, profilePhoto: file })}
                 onDraftRestore={handleDraftRestore}
-                clerkUserId={user?.id || ''}
+                authUserId={user?.id || ''}
             />
         </div>
     );

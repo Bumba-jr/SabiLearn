@@ -42,9 +42,23 @@ export async function validateDraftsWithServer(
     try {
         // Get drafts from server
         const response = await fetch(`/api/drafts/${clerkUserId}`);
+
+        // If the request fails, log the error but don't throw
         if (!response.ok) {
-            // If table doesn't exist yet or other error, return empty
-            console.warn('Could not fetch drafts from server:', response.status);
+            console.warn('Could not fetch drafts from server:', {
+                status: response.status,
+                statusText: response.statusText,
+                url: response.url
+            });
+
+            // Try to get error details
+            try {
+                const errorData = await response.text();
+                console.warn('Server response:', errorData.substring(0, 500));
+            } catch (e) {
+                console.warn('Could not read error response');
+            }
+
             return {};
         }
 
@@ -83,6 +97,7 @@ export async function validateDraftsWithServer(
         return validatedDrafts;
     } catch (error) {
         console.error('Failed to validate drafts with server:', error);
+        // Return empty object instead of throwing
         return {};
     }
 }
@@ -99,7 +114,10 @@ export async function cleanupStaleDraftReferences(clerkUserId: string): Promise<
         const response = await fetch(`/api/drafts/${clerkUserId}`);
         if (!response.ok) {
             // If table doesn't exist yet or other error, skip cleanup
-            console.warn('Could not fetch drafts for cleanup:', response.status);
+            console.warn('Could not fetch drafts for cleanup:', {
+                status: response.status,
+                statusText: response.statusText
+            });
             return;
         }
 
@@ -122,6 +140,7 @@ export async function cleanupStaleDraftReferences(clerkUserId: string): Promise<
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(cleanedRefs));
     } catch (error) {
         console.error('Failed to cleanup stale draft references:', error);
+        // Don't throw - this is not critical for the user experience
     }
 }
 

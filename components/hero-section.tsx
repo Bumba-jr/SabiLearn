@@ -3,17 +3,17 @@
 import { CheckCircle2, Bell, BookOpen, Calendar, ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useAuth } from "@/lib/auth/AuthProvider";
 import { useEffect, useState } from "react";
 
 export function HeroSection() {
-    const { isSignedIn } = useUser();
+    const { user } = useAuth();
     const [userRole, setUserRole] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         async function fetchUserRole() {
-            if (!isSignedIn) {
+            if (!user) {
                 setIsLoading(false);
                 return;
             }
@@ -32,7 +32,7 @@ export function HeroSection() {
         }
 
         fetchUserRole();
-    }, [isSignedIn]);
+    }, [user]);
 
     return (
         <section className="relative min-h-[90vh] bg-gradient-to-br from-background via-background to-muted/30 py-16 md:py-24 px-4 overflow-hidden">
@@ -43,7 +43,7 @@ export function HeroSection() {
             {/* Floating Orbs */}
             <div className="absolute top-10 left-10 w-96 h-96 bg-primary/15 rounded-full blur-3xl animate-float-1" />
             <div className="absolute bottom-10 left-20 w-72 h-72 bg-accent/12 rounded-full blur-3xl animate-float-2" />
-            <div className="absolute bottom-20 right-10 w-[28rem] h-[28rem] bg-secondary/25 rounded-full blur-3xl animate-float-3" />
+            <div className="absolute bottom-20 right-10 w-[28rem] h-[28rem] bg-primary/15 rounded-full blur-3xl animate-float-3" />
 
             <div className="relative max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
                 {/* Left Content */}
@@ -71,7 +71,7 @@ export function HeroSection() {
                         {!isLoading && (
                             <>
                                 {/* Not signed in - show default buttons */}
-                                {!isSignedIn && (
+                                {!user && (
                                     <>
                                         <Link href="/find-tutors" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
                                             Find a Tutor Now
@@ -84,7 +84,7 @@ export function HeroSection() {
                                 )}
 
                                 {/* Tutor - show single button to dashboard */}
-                                {isSignedIn && userRole === 'tutor' && (
+                                {user && userRole === 'tutor' && (
                                     <Link href="/dashboard/tutor" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
                                         Go to Dashboard
                                         <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
@@ -92,7 +92,7 @@ export function HeroSection() {
                                 )}
 
                                 {/* Student/Parent - show find tutor button */}
-                                {isSignedIn && (userRole === 'student' || userRole === 'parent') && (
+                                {user && (userRole === 'student' || userRole === 'parent') && (
                                     <>
                                         <Link href="/find-tutors" className="bg-primary hover:bg-primary/90 text-white px-6 py-3 md:px-8 md:py-3.5 rounded-xl text-sm md:text-base font-semibold transition-all hover:scale-[1.02] hover:shadow-xl shadow-lg active:scale-[0.98] flex items-center justify-center gap-2">
                                             Find a Tutor Now
@@ -150,7 +150,7 @@ function PhoneMockupWithCards() {
     return (
         <div className="relative w-full max-w-[500px] h-[700px]">
             {/* Identity Verified Card - Top Left */}
-            <div className="absolute top-8 -left-8 z-20 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3 border border-gray-100/50 backdrop-blur-sm">
+            <div className="absolute top-40 -left-8 z-20 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-3 border border-gray-100/50 backdrop-blur-sm">
                 <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center flex-shrink-0">
                     <CheckCircle2 className="w-7 h-7 text-emerald-600" />
                 </div>
@@ -168,7 +168,7 @@ function PhoneMockupWithCards() {
                     <div className="bg-secondary text-white rounded-3xl p-6 relative overflow-hidden mb-5">
                         <div className="absolute top-3 left-5 w-12 h-12 bg-white/10 rounded-full" />
                         <Bell className="absolute top-5 right-5 w-6 h-6 z-10" />
-                        <div className="space-y-2 relative z-10 pt-2">
+                        <div className="space-y-2 relative z-10 pt-2 mt-10">
                             <h3 className="text-xl font-bold">Good morning, Mrs. Bello</h3>
                             <p className="text-sm text-white/70">What would you like to learn today?</p>
                         </div>
@@ -190,7 +190,7 @@ function PhoneMockupWithCards() {
                         <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-2xl">
                             <div className="w-14 h-14 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-primary">
                                 <Image
-                                    src="/file0.jpeg"
+                                    src="/avatar/male30.png"
                                     alt="Tutor"
                                     width={56}
                                     height={56}
@@ -222,11 +222,11 @@ function PhoneMockupWithCards() {
             </div>
 
             {/* Expert Tutors Card - Bottom Left */}
-            <div className="absolute bottom-20 -left-8 z-20 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-4 border border-gray-100/50 backdrop-blur-sm">
+            <div className="absolute bottom-40 -left-8 z-20 bg-white rounded-2xl shadow-xl p-4 flex items-center gap-4 border border-gray-100/50 backdrop-blur-sm">
                 <div className="flex -space-x-3">
                     <div className="w-12 h-12 rounded-full overflow-hidden border-3 border-white shadow-md">
                         <Image
-                            src="/file1.jpeg"
+                            src="/avatar/female34.jpeg"
                             alt="Tutor"
                             width={48}
                             height={48}
@@ -235,7 +235,7 @@ function PhoneMockupWithCards() {
                     </div>
                     <div className="w-12 h-12 rounded-full overflow-hidden border-3 border-white shadow-md">
                         <Image
-                            src="/file2.jpeg"
+                            src="/avatar/female38.png"
                             alt="Tutor"
                             width={48}
                             height={48}

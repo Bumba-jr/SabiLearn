@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
+import { useAuth } from '@/lib/auth/AuthProvider';
+import { supabase } from '@/lib/supabase/client';
 import { Presentation, GraduationCap, Users, HelpCircle, X, BookOpen } from 'lucide-react';
 
 type Role = 'tutor' | 'student' | 'parent';
@@ -214,7 +215,15 @@ export default function RoleSelectionPage() {
     const [error, setError] = useState<string | null>(null);
     const [showHelpModal, setShowHelpModal] = useState(false);
     const router = useRouter();
-    const { user } = useUser();
+    const { user, loading } = useAuth();
+
+    // Redirect to sign-in if not authenticated
+    useEffect(() => {
+        if (!loading && !user) {
+            console.log('No user found, redirecting to sign-in');
+            router.push('/sign-in');
+        }
+    }, [user, loading, router]);
 
     const handleRoleSelect = (role: Role) => {
         setSelectedRole(selectedRole === role ? null : role);
@@ -222,7 +231,10 @@ export default function RoleSelectionPage() {
     };
 
     const handleContinue = async () => {
-        if (!selectedRole || !user) return;
+        if (!selectedRole || !user) {
+            setError('Please sign in to continue');
+            return;
+        }
 
         setIsSubmitting(true);
         setError(null);
@@ -230,11 +242,29 @@ export default function RoleSelectionPage() {
         try {
             console.log('Creating profile for user:', user.id, 'with role:', selectedRole);
 
+            // Get the session token
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+            console.log('Session check:', {
+                hasSession: !!session,
+                hasAccessToken: !!session?.access_token,
+                sessionError
+            });
+
+            if (!session || !session.access_token) {
+                throw new Error('No active session. Please sign in again.');
+            }
+
+            console.log('Sending request with token:', session.access_token.substring(0, 20) + '...');
+
             const response = await fetch('/api/profile', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({
-                    clerkUserId: user.id,
+                    authUserId: user.id,
                     role: selectedRole,
                 }),
             });
@@ -245,6 +275,12 @@ export default function RoleSelectionPage() {
             console.log('Response data:', data);
 
             if (!response.ok) {
+                // Check if it's a duplicate key error (profile already exists)
+                if (data.error && data.error.includes('duplicate key')) {
+                    console.log('Profile already exists, redirecting to onboarding');
+                    router.push(`/onboarding/${selectedRole}`);
+                    return;
+                }
                 throw new Error(data.error || 'Failed to create profile');
             }
 
@@ -260,6 +296,18 @@ export default function RoleSelectionPage() {
 
     const selectedCard = roleCards.find(card => card.role === selectedRole);
     const backgroundColor = selectedCard ? selectedCard.lightBg : '#F9FAFB';
+
+    // Show loading while checking auth
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF6B35] mx-auto mb-4"></div>
+                    <p className="text-gray-600 font-inter">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>

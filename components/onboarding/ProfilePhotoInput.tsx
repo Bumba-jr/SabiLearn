@@ -10,7 +10,7 @@ interface ProfilePhotoInputProps {
     draftMetadata?: DraftMetadata | null;
     onChange: (file: File | null) => void;
     onDraftRestore?: (metadata: DraftMetadata) => void;
-    clerkUserId: string;
+    authUserId: string;
 }
 
 export function ProfilePhotoInput({
@@ -18,7 +18,7 @@ export function ProfilePhotoInput({
     draftMetadata,
     onChange,
     onDraftRestore,
-    clerkUserId,
+    authUserId,
 }: ProfilePhotoInputProps) {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -38,18 +38,61 @@ export function ProfilePhotoInput({
         },
     });
 
-    // Create preview URL when value changes
+    // Create preview URL when value changes (with HEIC conversion)
     useEffect(() => {
-        if (value) {
-            const url = URL.createObjectURL(value);
-            setPreviewUrl(url);
-            return () => URL.revokeObjectURL(url);
-        } else {
-            if (previewUrl) {
-                URL.revokeObjectURL(previewUrl);
-                setPreviewUrl(null);
+        async function createPreview() {
+            if (value) {
+                // Check if file is HEIC/HEIF format
+                const isHEIC = value.type === 'image/heic' ||
+                    value.type === 'image/heif' ||
+                    value.name.toLowerCase().endsWith('.heic') ||
+                    value.name.toLowerCase().endsWith('.heif');
+
+                if (isHEIC) {
+                    try {
+                        // Dynamically import heic2any only on client side
+                        const heic2any = (await import('heic2any')).default;
+
+                        // Convert HEIC to JPEG for preview
+                        const convertedBlob = await heic2any({
+                            blob: value,
+                            toType: 'image/jpeg',
+                            quality: 0.9
+                        });
+
+                        // heic2any can return Blob or Blob[], handle both cases
+                        const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+                        const url = URL.createObjectURL(blob);
+                        setPreviewUrl(url);
+                    } catch (error) {
+                        console.error('HEIC conversion error:', error);
+                        toast.error('Preview failed', {
+                            description: 'Could not preview HEIC image, but it will still upload',
+                            duration: 3000,
+                        });
+                        // Set a placeholder or skip preview
+                        setPreviewUrl(null);
+                    }
+                } else {
+                    // For other image formats, create preview normally
+                    const url = URL.createObjectURL(value);
+                    setPreviewUrl(url);
+                }
+
+                return () => {
+                    if (previewUrl) {
+                        URL.revokeObjectURL(previewUrl);
+                    }
+                };
+            } else {
+                if (previewUrl) {
+                    URL.revokeObjectURL(previewUrl);
+                    setPreviewUrl(null);
+                }
             }
         }
+
+        createPreview();
     }, [value]);
 
     // Handle file selection
@@ -66,10 +109,16 @@ export function ProfilePhotoInput({
                 return;
             }
 
-            // Validate file type
-            if (!file.type.startsWith('image/')) {
+            // Validate file type (accept images and GIFs)
+            const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'];
+            const isValidType = validTypes.includes(file.type) ||
+                file.name.toLowerCase().endsWith('.heic') ||
+                file.name.toLowerCase().endsWith('.heif') ||
+                file.name.toLowerCase().endsWith('.gif');
+
+            if (!isValidType) {
                 toast.error('Invalid file type', {
-                    description: 'Please select an image file',
+                    description: 'Please select an image file (JPG, PNG, GIF, HEIC, or WebP)',
                     duration: 5000,
                 });
                 return;
@@ -77,9 +126,9 @@ export function ProfilePhotoInput({
 
             clearError();
             onChange(file);
-            await upload(file, clerkUserId);
+            await upload(file, authUserId);
         },
-        [onChange, upload, clerkUserId, clearError]
+        [onChange, upload, authUserId, clearError]
     );
 
     // Handle input change
@@ -106,20 +155,20 @@ export function ProfilePhotoInput({
 
             {/* Draft restoration UI */}
             {draftMetadata && !value && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-blue-900">
+                            <p className="text-sm font-medium text-orange-900">
                                 Draft found: {draftMetadata.original_filename}
                             </p>
-                            <p className="text-xs text-blue-700">
+                            <p className="text-xs text-orange-700">
                                 Uploaded {new Date(draftMetadata.uploaded_at).toLocaleDateString()}
                             </p>
                         </div>
                         <button
                             type="button"
                             onClick={handleRestoreDraft}
-                            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                            className="px-3 py-1 text-sm bg-[#FF6B35] text-white rounded hover:bg-[#FF8C5A] transition-colors"
                         >
                             Restore
                         </button>
@@ -176,7 +225,7 @@ export function ProfilePhotoInput({
                     <input
                         ref={fileInputRef}
                         type="file"
-                        accept="image/*,.heic,.heif"
+                        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif,.heic,.heif,.gif"
                         onChange={handleInputChange}
                         className="hidden"
                     />
@@ -191,7 +240,7 @@ export function ProfilePhotoInput({
                     </button>
 
                     <p className="text-sm text-gray-500">
-                        Professional headshot. Smile, good lighting, plain background.
+                        Professional headshot. Smile, good lighting, plain background. Accepts JPG, PNG, GIF, HEIC.
                     </p>
 
                     {/* File Info */}

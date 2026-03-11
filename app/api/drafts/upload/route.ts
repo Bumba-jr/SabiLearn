@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getServerUser } from '@/lib/auth/supabase-auth';
 import { validateFile } from '@/lib/utils/file-validation';
 import { generateStoragePath } from '@/lib/utils/storage-path';
 import { uploadDraftFile, deleteDraftFile } from '@/lib/storage/draft-storage';
+import { convertHeicIfNeeded } from '@/lib/utils/heic-converter';
 import {
     createDraftMetadata,
     getDraftsByUserId,
@@ -14,8 +15,10 @@ import { supabaseAdmin } from '@/lib/supabase-server';
 // Configure route segment to allow larger request bodies
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds timeout
-// Note: Body size limits in Next.js 15 App Router are handled at the framework level
-// The default limit is ~4.5MB. For larger files, consider using streaming or chunked uploads
+
+// Increase body size limit for file uploads (100MB for videos)
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * GET /api/drafts/upload
@@ -33,7 +36,6 @@ export async function GET() {
  * Request body (multipart/form-data):
  * - file: File to upload
  * - fileType: One of the supported file types
- * - clerkUserId: Clerk user ID
  * 
  * Response:
  * - 201: Draft created successfully
@@ -51,7 +53,8 @@ export async function POST(request: NextRequest) {
 
     try {
         // Verify authentication
-        const { userId } = await auth();
+        const user = await getServerUser();
+        const userId = user?.id;
         console.log('🔐 Auth check - userId:', userId);
         if (!userId) {
             console.log('❌ No userId - returning 401');
@@ -80,53 +83,63 @@ export async function POST(request: NextRequest) {
 
         const file = formData.get('file') as File | null;
         const fileType = formData.get('fileType') as FileType | null;
-        const clerkUserId = formData.get('clerkUserId') as string | null;
 
         console.log('📋 Form data:', {
             hasFile: !!file,
             fileSize: file?.size,
             fileName: file?.name,
             fileType,
-            clerkUserId
+            userId
         });
 
         // Validate required fields
-        if (!file || !fileType || !clerkUserId) {
+        if (!file || !fileType) {
             return NextResponse.json(
-                { error: 'Missing required fields: file, fileType, clerkUserId' },
+                { error: 'Missing required fields: file, fileType' },
                 { status: 400 }
-            );
-        }
-
-        // Verify user ID matches authenticated user
-        if (clerkUserId !== userId) {
-            return NextResponse.json(
-                {
-                    error: 'Forbidden: User ID mismatch',
-                    debug: {
-                        authenticatedUserId: userId,
-                        requestedUserId: clerkUserId
-                    }
-                },
-                { status: 403 }
             );
         }
 
         // Validate file
         const validation = validateFile(file, fileType);
         if (!validation.valid) {
+            console.log('❌ File validation failed:', validation.error);
             return NextResponse.json(
                 { error: validation.error },
                 { status: 400 }
             );
         }
 
-        // Generate storage path
-        const storagePath = generateStoragePath(clerkUserId, fileType, file.name);
+        // Convert HEIC to JPEG if needed (for profile photos)
+        let processedFile = file;
+        if (fileType === 'profile_photo') {
+            try {
+                processedFile = await convertHeicIfNeeded(file);
+                if (processedFile !== file) {
+                    console.log('✅ HEIC file converted to JPEG');
+                }
+            } catch (conversionError) {
+                console.error('❌ HEIC conversion error:', conversionError);
+                return NextResponse.json(
+                    {
+                        error: 'Failed to process image file',
+                        details: conversionError instanceof Error ? conversionError.message : 'Unknown error'
+                    },
+                    { status: 400 }
+                );
+            }
+        }
+
+        // Generate storage path (use processed file name)
+        const storagePath = generateStoragePath(userId, fileType, processedFile.name);
+        console.log('📁 Generated storage path:', storagePath);
 
         // Check if draft already exists for this file type
-        const existingDrafts = await getDraftsByUserId(clerkUserId);
+        console.log('🔍 Checking for existing drafts...');
+        const existingDrafts = await getDraftsByUserId(userId);
+        console.log('📦 Existing drafts:', existingDrafts.length);
         const existingDraft = existingDrafts.find(d => d.file_type === fileType);
+        console.log('🔄 Found existing draft for this type:', !!existingDraft);
 
         let draftMetadata;
         let oldStoragePath: string | null = null;
@@ -137,26 +150,33 @@ export async function POST(request: NextRequest) {
 
             // Begin transaction-like operation
             try {
-                // Upload new file
-                await uploadDraftFile(file, storagePath);
+                // Upload new file (use processed file)
+                console.log('⬆️ Uploading new file to replace existing...');
+                await uploadDraftFile(processedFile, storagePath);
+                console.log('✅ File uploaded successfully');
 
-                // Update metadata
+                // Update metadata (use processed file info)
+                console.log('📝 Updating metadata...');
                 draftMetadata = await updateDraftMetadata(
                     existingDraft.id,
-                    clerkUserId,
+                    userId,
                     {
                         storage_path: storagePath,
-                        original_filename: file.name,
-                        file_size: file.size,
-                        mime_type: file.type,
+                        original_filename: processedFile.name,
+                        file_size: processedFile.size,
+                        mime_type: processedFile.type,
                     }
                 );
+                console.log('✅ Metadata updated');
 
                 // Delete old file
                 if (oldStoragePath) {
+                    console.log('🗑️ Deleting old file:', oldStoragePath);
                     await deleteDraftFile(oldStoragePath);
+                    console.log('✅ Old file deleted');
                 }
             } catch (error) {
+                console.error('❌ Error during file replacement:', error);
                 // Rollback: delete newly uploaded file if metadata update failed
                 try {
                     await deleteDraftFile(storagePath);
@@ -168,19 +188,24 @@ export async function POST(request: NextRequest) {
         } else {
             // New draft: upload file and create metadata
             try {
-                // Upload file
-                await uploadDraftFile(file, storagePath);
+                // Upload file (use processed file)
+                console.log('⬆️ Uploading new file...');
+                await uploadDraftFile(processedFile, storagePath);
+                console.log('✅ File uploaded successfully');
 
-                // Create metadata
+                // Create metadata (use processed file info)
+                console.log('📝 Creating metadata...');
                 draftMetadata = await createDraftMetadata({
-                    clerk_user_id: clerkUserId,
+                    auth_user_id: userId,
                     file_type: fileType,
                     storage_path: storagePath,
-                    original_filename: file.name,
-                    file_size: file.size,
-                    mime_type: file.type,
+                    original_filename: processedFile.name,
+                    file_size: processedFile.size,
+                    mime_type: processedFile.type,
                 });
+                console.log('✅ Metadata created');
             } catch (error) {
+                console.error('❌ Error during new file upload:', error);
                 // Rollback: delete uploaded file if metadata creation failed
                 try {
                     await deleteDraftFile(storagePath);

@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getServerUser } from '@/lib/auth/supabase-auth';
 
 /**
- * Debug endpoint to check Clerk authentication
+ * Debug endpoint to check Supabase authentication
  * GET /api/debug/auth
  */
 export async function GET() {
     try {
-        const authData = await auth();
+        const user = await getServerUser();
 
         return NextResponse.json({
-            authenticated: !!authData.userId,
-            userId: authData.userId,
-            sessionId: authData.sessionId,
-            orgId: authData.orgId,
+            authenticated: !!user,
+            userId: user?.id || null,
+            email: user?.email || null,
             timestamp: new Date().toISOString()
         });
     } catch (error) {

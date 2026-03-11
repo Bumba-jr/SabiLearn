@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Outfit, Inter } from "next/font/google";
 import "./globals.css";
 import SupabaseProvider from "@/components/SupabaseProvider";
-import { ClerkProvider } from "@clerk/nextjs";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { Toaster } from "@/components/ui/sonner";
 
 const outfit = Outfit({
@@ -33,9 +33,9 @@ export default function RootLayout({
       <body
         className={`${outfit.variable} ${inter.variable} antialiased`}
       >
-        <ClerkProvider dynamic>
+        <AuthProvider>
           <SupabaseProvider>{children}</SupabaseProvider>
-        </ClerkProvider>
+        </AuthProvider>
         <Toaster />
       </body>
     </html>
