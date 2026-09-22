@@ -50,6 +50,13 @@ function generateTutors(count: number, startIndex: number = 0) {
         const names = isMale ? maleNames : femaleNames;
         const nameIndex = actualIndex % names.length;
 
+        // A few assets are PNG (male29, male30, female38, female39); the rest are JPEG
+        const ext =
+            (isMale && (imageNum === 29 || imageNum === 30)) ||
+            (!isMale && (imageNum === 38 || imageNum === 39))
+                ? "png"
+                : "jpeg";
+
         tutors.push({
             name: names[nameIndex],
             verified: true,
@@ -57,7 +64,7 @@ function generateTutors(count: number, startIndex: number = 0) {
             degree: degrees[actualIndex % degrees.length],
             price: `₦${(3000 + ((actualIndex % 10) * 300)).toLocaleString()}`,
             subjects: subjectSets[actualIndex % subjectSets.length],
-            image: `/avatar/${gender}${imageNum}.jpeg`,
+            image: `/avatar/${gender}${imageNum}.${ext}`,
         });
     }
     return tutors;

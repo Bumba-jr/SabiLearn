@@ -33,7 +33,7 @@ interface Tutor {
 
 export default function FavoritesPage() {
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, session } = useAuth();
     const [favoriteTutors, setFavoriteTutors] = useState<Tutor[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -47,15 +47,33 @@ export default function FavoritesPage() {
             try {
                 setLoading(true);
 
-                // Get saved tutor IDs from user-specific localStorage
-                const userFavoritesKey = `savedTutors_${user.id}`;
-                const savedTutorIds = localStorage.getItem(userFavoritesKey);
-                if (!savedTutorIds) {
-                    setLoading(false);
-                    return;
+                // Prefer the database; fall back to the localStorage copy
+                let tutorIds: string[] = [];
+                try {
+                    const favResponse = await fetch('/api/favorites', {
+                        headers: session?.access_token
+                            ? { Authorization: `Bearer ${session.access_token}` }
+                            : {},
+                    });
+                    if (favResponse.ok) {
+                        const favData = await favResponse.json();
+                        tutorIds = favData.tutorIds || [];
+                    }
+                } catch {
+                    // fall through to localStorage
                 }
 
-                const tutorIds = JSON.parse(savedTutorIds);
+                if (tutorIds.length === 0) {
+                    const userFavoritesKey = `savedTutors_${user.id}`;
+                    const savedTutorIds = localStorage.getItem(userFavoritesKey);
+                    if (savedTutorIds) {
+                        try {
+                            tutorIds = JSON.parse(savedTutorIds) || [];
+                        } catch {
+                            tutorIds = [];
+                        }
+                    }
+                }
 
                 if (tutorIds.length === 0) {
                     setLoading(false);
@@ -89,7 +107,7 @@ export default function FavoritesPage() {
         };
 
         fetchFavoriteTutors();
-    }, [user, router]);
+    }, [user, session, router]);
 
     const handleRemoveFavorite = (tutorId: string) => {
         const tutor = favoriteTutors.find(t => t.id === tutorId);

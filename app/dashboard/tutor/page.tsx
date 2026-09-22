@@ -2,6 +2,7 @@ import { getServerUser } from '@/lib/auth/supabase-auth';
 import { redirect } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import { SignOutButton } from '@/components/SignOutButton';
+import { BookingsList } from '@/components/BookingsList';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -226,11 +227,19 @@ export default async function TutorDashboardPage() {
                     </p>
                 </div>
 
-                {/* Coming Soon Section */}
+                {/* Booking Requests */}
+                <div className="mt-8">
+                    <h3 className="text-xl font-outfit font-bold text-[#0A2540] mb-4">
+                        Booking Requests
+                    </h3>
+                    <BookingsList view="tutor" />
+                </div>
+
+                {/* Earnings teaser */}
                 <div className="mt-8 bg-gradient-to-r from-[#0A2540] to-[#0A2540]/90 rounded-2xl p-8 text-white text-center">
-                    <h3 className="text-2xl font-outfit font-bold mb-2">More Features Coming Soon!</h3>
+                    <h3 className="text-2xl font-outfit font-bold mb-2">Earnings Tracking Coming Soon!</h3>
                     <p className="font-inter text-white/80">
-                        Session management, earnings tracking, and student requests will be available soon.
+                        Payouts and earnings analytics will be available soon.
                     </p>
                 </div>
             </main>

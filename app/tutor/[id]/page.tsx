@@ -4,7 +4,18 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
-import { Star, MapPin, CheckCircle, Briefcase, ArrowLeft, Calendar, MessageCircle, Shield } from 'lucide-react';
+import { Star, MapPin, CheckCircle, Briefcase, ArrowLeft, Calendar, MessageCircle, Shield, X, Loader2 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthProvider';
+import { SignInModal } from '@/components/SignInModal';
+import { toast } from 'sonner';
+
+interface ReviewItem {
+    id: string;
+    rating: number;
+    comment: string | null;
+    createdAt: string;
+    studentName: string;
+}
 
 interface Tutor {
     id: string;
@@ -35,6 +46,7 @@ interface Tutor {
     yearsOfExperience?: number;
     gradeLevels?: string[];
     examTypes?: string[];
+    recentReviews?: ReviewItem[];
 }
 
 export default function TutorProfilePage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,6 +55,21 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
     const [tutor, setTutor] = useState<Tutor | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Booking form state
+    const { user, session } = useAuth();
+    const [showBookingModal, setShowBookingModal] = useState(false);
+    const [showSignInModal, setShowSignInModal] = useState(false);
+    const [submittingBooking, setSubmittingBooking] = useState(false);
+    const [bookingDone, setBookingDone] = useState(false);
+    const [bookingForm, setBookingForm] = useState({
+        subject: '',
+        scheduledAt: '',
+        durationMinutes: 60,
+        mode: 'online' as 'online' | 'home',
+        address: '',
+        notes: '',
+    });
 
     useEffect(() => {
         const fetchTutor = async () => {
@@ -76,6 +103,63 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
             setLoading(false);
         }
     }, [resolvedParams.id]);
+
+    // Preselect the tutor's first subject once loaded
+    useEffect(() => {
+        if (tutor && tutor.subjects.length > 0) {
+            setBookingForm((f) => ({ ...f, subject: tutor.subjects[0] }));
+        }
+    }, [tutor]);
+
+    const handleBookClick = () => {
+        if (!user) {
+            setShowSignInModal(true);
+            return;
+        }
+        setShowBookingModal(true);
+    };
+
+    const handleBookingSubmit = async () => {
+        if (!session?.access_token) {
+            setShowSignInModal(true);
+            return;
+        }
+        if (!bookingForm.subject || !bookingForm.scheduledAt) {
+            toast.error('Please choose a subject and a date/time.');
+            return;
+        }
+        if (bookingForm.mode === 'home' && !bookingForm.address.trim()) {
+            toast.error('Please enter the lesson address for a home lesson.');
+            return;
+        }
+
+        try {
+            setSubmittingBooking(true);
+            const response = await fetch('/api/bookings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                    tutorId: tutor!.id,
+                    ...bookingForm,
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                toast.error(data.error || 'Failed to send booking request');
+                return;
+            }
+            setShowBookingModal(false);
+            setBookingDone(true);
+            toast.success('Booking request sent!');
+        } catch {
+            toast.error('Could not reach the booking service. Please try again.');
+        } finally {
+            setSubmittingBooking(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -325,17 +409,37 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="space-y-3">
-                                <button className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2">
-                                    <Calendar className="w-5 h-5" />
-                                    Book a Session
-                                </button>
+                            {bookingDone ? (
+                                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                                    <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                                    <p className="font-semibold text-gray-900 mb-1">Request sent!</p>
+                                    <p className="text-sm text-gray-600 mb-3">
+                                        {tutor.name} will accept or decline shortly. Track it from your dashboard.
+                                    </p>
+                                    <button
+                                        onClick={() => router.push('/dashboard')}
+                                        className="text-green-700 font-semibold text-sm hover:underline"
+                                    >
+                                        Go to Dashboard →
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={handleBookClick}
+                                        disabled={!tutor.verified}
+                                        className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        <Calendar className="w-5 h-5" />
+                                        Book a Session
+                                    </button>
 
-                                <button className="w-full bg-white hover:bg-gray-50 text-gray-700 font-semibold py-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-2">
-                                    <MessageCircle className="w-5 h-5" />
-                                    Send Message
-                                </button>
-                            </div>
+                                    <button className="w-full bg-white hover:bg-gray-50 text-gray-700 font-semibold py-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-2">
+                                        <MessageCircle className="w-5 h-5" />
+                                        Send Message
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Security Note */}
                             <div className="mt-6 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
@@ -345,7 +449,195 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                         </div>
                     </div>
                 </div>
+
+                {/* Reviews */}
+                {tutor.recentReviews && tutor.recentReviews.length > 0 && (
+                    <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-sm mt-8">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6">
+                            Reviews <span className="text-gray-400 text-lg">({tutor.reviews})</span>
+                        </h2>
+                        <div className="space-y-5">
+                            {tutor.recentReviews.map((review) => (
+                                <div key={review.id} className="border-b border-gray-100 last:border-0 pb-5 last:pb-0">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-bold text-sm">
+                                            {review.studentName.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-gray-900 text-sm">{review.studentName}</p>
+                                            <div className="flex items-center gap-1">
+                                                {[...Array(5)].map((_, i) => (
+                                                    <Star
+                                                        key={i}
+                                                        className={`w-3.5 h-3.5 ${i < review.rating ? 'fill-orange-400 text-orange-400' : 'text-gray-300'}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <span className="ml-auto text-xs text-gray-400">
+                                            {new Date(review.createdAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    {review.comment && (
+                                        <p className="text-gray-600 text-sm leading-relaxed">{review.comment}</p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
+
+            {/* Booking Modal */}
+            {showBookingModal && (
+                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-xl font-bold text-gray-900">Book {tutor.name}</h3>
+                            <button
+                                onClick={() => setShowBookingModal(false)}
+                                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                            >
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        {tutor.hourlyRate ? (
+                            <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-6 flex items-center justify-between">
+                                <span className="text-sm text-gray-600">Estimated cost</span>
+                                <span className="font-bold text-green-700 text-lg">
+                                    ₦{Math.round((tutor.hourlyRate * bookingForm.durationMinutes) / 60).toLocaleString()}
+                                    <span className="text-xs font-normal text-gray-500"> for {bookingForm.durationMinutes} min</span>
+                                </span>
+                            </div>
+                        ) : null}
+
+                        <div className="space-y-4">
+                            {/* Subject */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Subject</label>
+                                <select
+                                    value={bookingForm.subject}
+                                    onChange={(e) => setBookingForm((f) => ({ ...f, subject: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600"
+                                >
+                                    {tutor.subjects.map((s) => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Date & time */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Date & Time</label>
+                                <input
+                                    type="datetime-local"
+                                    value={bookingForm.scheduledAt}
+                                    onChange={(e) => setBookingForm((f) => ({ ...f, scheduledAt: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600"
+                                />
+                            </div>
+
+                            {/* Duration */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Duration</label>
+                                <div className="flex gap-2">
+                                    {[60, 90, 120].map((d) => (
+                                        <button
+                                            key={d}
+                                            type="button"
+                                            onClick={() => setBookingForm((f) => ({ ...f, durationMinutes: d }))}
+                                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                                                bookingForm.durationMinutes === d
+                                                    ? 'bg-green-600 text-white'
+                                                    : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {d / 60} hr{d > 60 ? 's' : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Mode */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Lesson Mode</label>
+                                <div className="flex gap-2">
+                                    {(['online', 'home'] as const).map((m) => (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => setBookingForm((f) => ({ ...f, mode: m }))}
+                                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                                                bookingForm.mode === m
+                                                    ? 'bg-green-600 text-white'
+                                                    : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {m === 'online' ? 'Online' : 'At My Home'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Address for home lessons */}
+                            {bookingForm.mode === 'home' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Lesson Address</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. 12 Adeola Odeku St, Lekki, Lagos"
+                                        value={bookingForm.address}
+                                        onChange={(e) => setBookingForm((f) => ({ ...f, address: e.target.value }))}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Notes */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                    Notes for the tutor <span className="text-gray-400 font-normal">(optional)</span>
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    placeholder="Anything the tutor should know about your child's level or goals"
+                                    value={bookingForm.notes}
+                                    onChange={(e) => setBookingForm((f) => ({ ...f, notes: e.target.value }))}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600 resize-none"
+                                />
+                            </div>
+
+                            <button
+                                onClick={handleBookingSubmit}
+                                disabled={submittingBooking}
+                                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                            >
+                                {submittingBooking ? (
+                                    <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        Sending request...
+                                    </>
+                                ) : (
+                                    'Send Booking Request'
+                                )}
+                            </button>
+                            <p className="text-xs text-gray-500 text-center">
+                                The tutor will confirm before anything is final. No payment is taken now.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <SignInModal
+                isOpen={showSignInModal}
+                onClose={() => setShowSignInModal(false)}
+                onSuccess={() => {
+                    setShowSignInModal(false);
+                    setShowBookingModal(true);
+                }}
+            />
 
             <Footer />
         </div>

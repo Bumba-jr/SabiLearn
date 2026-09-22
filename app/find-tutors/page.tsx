@@ -66,7 +66,7 @@ const LESSON_MODES = [
 
 export default function FindTutorsPage() {
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, session } = useAuth();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLocation, setSelectedLocation] = useState('Online');
     const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
@@ -76,6 +76,8 @@ export default function FindTutorsPage() {
     const [sortBy, setSort] = useState('Recommended');
     const [tutors, setTutors] = useState<Tutor[]>([]);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
     const [savedTutors, setSavedTutors] = useState<Set<string>>(new Set());
     const [hoveredHeart, setHoveredHeart] = useState<string | null>(null);
     const [showSignInModal, setShowSignInModal] = useState(false);
@@ -95,32 +97,56 @@ export default function FindTutorsPage() {
         }
     }, []);
 
-    // Load saved tutors from localStorage on component mount (user-specific)
+    // Load saved tutors: prefer the database, fall back to localStorage
     useEffect(() => {
-        if (user) {
+        if (!user) {
+            setSavedTutors(new Set());
+            return;
+        }
+
+        const loadFavorites = async () => {
             const userFavoritesKey = `savedTutors_${user.id}`;
+            try {
+                const response = await fetch('/api/favorites', {
+                    headers: session?.access_token
+                        ? { Authorization: `Bearer ${session.access_token}` }
+                        : {},
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setSavedTutors(new Set(data.tutorIds || []));
+                    // Keep the localStorage copy in sync as a cache
+                    localStorage.setItem(userFavoritesKey, JSON.stringify(data.tutorIds || []));
+                    return;
+                }
+                // API unavailable (migration not applied) — fall back to localStorage
+            } catch {
+                // fall through to localStorage
+            }
+
             const savedTutorIds = localStorage.getItem(userFavoritesKey);
             if (savedTutorIds) {
                 try {
                     const parsedIds = JSON.parse(savedTutorIds);
                     setSavedTutors(new Set(parsedIds));
                 } catch (error) {
-                    console.error('Error loading saved tutors:', error);
+                    console.warn('Error loading saved tutors:', error);
                     setSavedTutors(new Set());
                 }
             } else {
                 setSavedTutors(new Set());
             }
-        } else {
-            setSavedTutors(new Set());
-        }
-    }, [user]);
+        };
+
+        loadFavorites();
+    }, [user, session]);
 
     // Fetch tutors from API
     useEffect(() => {
         const fetchTutors = async () => {
             try {
                 setLoading(true);
+                setFetchError(null);
 
                 // Build query params
                 const params = new URLSearchParams();
@@ -140,11 +166,11 @@ export default function FindTutorsPage() {
                 if (response.ok) {
                     setTutors(data.tutors || []);
                 } else {
-                    console.error('Failed to fetch tutors:', data.error);
+                    setFetchError(data.error || 'Failed to load tutors');
                     setTutors([]);
                 }
-            } catch (error) {
-                console.error('Error fetching tutors:', error);
+            } catch {
+                setFetchError('Could not reach the tutor service. Please try again.');
                 setTutors([]);
             } finally {
                 setLoading(false);
@@ -152,7 +178,7 @@ export default function FindTutorsPage() {
         };
 
         fetchTutors();
-    }, [selectedSubjects, selectedLevels, selectedCategory]); // Re-fetch when filters change
+    }, [selectedSubjects, selectedLevels, selectedCategory, retryCount]); // Re-fetch when filters change
 
     const handleSubjectToggle = (subject: string) => {
         setSelectedSubjects(prev =>
@@ -202,7 +228,8 @@ export default function FindTutorsPage() {
 
         setSavedTutors(prev => {
             const newSaved = new Set(prev);
-            if (newSaved.has(tutorId)) {
+            const isSaved = newSaved.has(tutorId);
+            if (isSaved) {
                 newSaved.delete(tutorId);
                 toast.success(`❤️ ${tutorName} removed from favorites`);
             } else {
@@ -210,8 +237,20 @@ export default function FindTutorsPage() {
                 toast.success(`💖 ${tutorName} added to favorites!`);
             }
 
-            // Save to user-specific localStorage
+            // Mirror to localStorage (cache + fallback when the favorites table is absent)
             localStorage.setItem(userFavoritesKey, JSON.stringify(Array.from(newSaved)));
+
+            // Persist to the database when signed in (best effort)
+            if (session?.access_token) {
+                fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify({ tutorId }),
+                }).catch(() => {});
+            }
 
             // Dispatch custom event to update header count
             window.dispatchEvent(new CustomEvent('favoritesChanged'));
@@ -471,8 +510,27 @@ export default function FindTutorsPage() {
                             </div>
                         )}
 
+                        {/* Error State */}
+                        {!loading && fetchError && (
+                            <div className="flex items-center justify-center py-20">
+                                <div className="text-center max-w-md">
+                                    <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+                                        <Shield className="w-7 h-7 text-red-500" />
+                                    </div>
+                                    <p className="text-xl text-gray-900 font-semibold mb-2">Something went wrong</p>
+                                    <p className="text-gray-500 mb-6">{fetchError}</p>
+                                    <button
+                                        onClick={() => setRetryCount((c) => c + 1)}
+                                        className="bg-gray-900 hover:bg-gray-800 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                                    >
+                                        Try Again
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Empty State */}
-                        {!loading && sortedTutors.length === 0 && (
+                        {!loading && !fetchError && sortedTutors.length === 0 && (
                             <div className="flex items-center justify-center py-20">
                                 <div className="text-center">
                                     <p className="text-xl text-gray-600 mb-2">No tutors found</p>
@@ -663,7 +721,10 @@ export default function FindTutorsPage() {
                                                 >
                                                     View Profile
                                                 </button>
-                                                <button className="flex-1 bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg text-sm font-semibold transition-all">
+                                                <button
+                                                    onClick={() => router.push(`/tutor/${tutor.id}`)}
+                                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg text-sm font-semibold transition-all"
+                                                >
                                                     Book Now
                                                 </button>
                                             </div>

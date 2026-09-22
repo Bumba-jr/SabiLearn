@@ -29,7 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // Browser extensions (e.g. DeepTranslate) inject attributes on <html> before
+    // hydration, so suppress attribute-mismatch warnings at this level only.
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${outfit.variable} ${inter.variable} antialiased`}
       >

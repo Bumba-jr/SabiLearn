@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
+import { BookingsList } from '@/components/BookingsList';
 
 export default function StudentDashboardPage() {
     const { user } = useAuth();
@@ -132,6 +133,12 @@ export default function StudentDashboardPage() {
                             Edit Profile
                         </button>
                     </div>
+                </div>
+
+                {/* My Bookings */}
+                <div className="mt-12">
+                    <h2 className="text-2xl font-bold text-gray-900 mb-6">My Bookings</h2>
+                    <BookingsList view="student" />
                 </div>
 
                 {/* Quick Stats */}

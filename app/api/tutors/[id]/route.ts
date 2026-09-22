@@ -101,6 +101,32 @@ export async function GET(
             }
         }
 
+        // Recent reviews for this tutor (with student first names)
+        const { data: reviewRows } = await supabaseAdmin
+            .from('reviews')
+            .select('id, rating, comment, created_at, student_id')
+            .eq('tutor_id', tutor.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        let studentNames: Record<string, string> = {};
+        const studentIds = [...new Set((reviewRows || []).map((r) => r.student_id))];
+        if (studentIds.length > 0) {
+            const { data: students } = await supabaseAdmin
+                .from('students')
+                .select('id, name')
+                .in('id', studentIds);
+            studentNames = Object.fromEntries((students || []).map((s) => [s.id, s.name]));
+        }
+
+        const recentReviews = (reviewRows || []).map((r) => ({
+            id: r.id,
+            rating: r.rating,
+            comment: r.comment,
+            createdAt: r.created_at,
+            studentName: studentNames[r.student_id]?.split(' ')[0] || 'Parent',
+        }));
+
         const transformedTutor = {
             id: tutor.id,
             name: tutor.name,
@@ -123,7 +149,8 @@ export async function GET(
             location: tutor.location || 'Not specified',
             gradeLevels: tutor.grade_levels || tutor.levels || [],
             examTypes: tutor.exam_types || [],
-            yearsOfExperience: yearsOfExperience
+            yearsOfExperience: yearsOfExperience,
+            recentReviews: recentReviews
         };
 
         return NextResponse.json(
