@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Header } from '@/components/header';
-import { Footer } from '@/components/footer';
+import { SignOutButton } from '@/components/SignOutButton';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { toast } from 'sonner';
 import { ChatPopup } from '@/components/ChatPopup';
@@ -225,14 +224,12 @@ export default function ParentDashboardPage() {
     if (!user && !loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                         <p className="text-lg text-gray-600 mb-4">Sign in to view your dashboard.</p>
                         <button onClick={() => router.push('/sign-in')} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
                     </div>
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -240,18 +237,15 @@ export default function ParentDashboardPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="w-10 h-10 animate-spin text-green-600" />
                 </div>
-                <Footer />
             </div>
         );
     }
 
     return (
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-            <Header />
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
                 {/* Header */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
@@ -262,12 +256,15 @@ export default function ParentDashboardPage() {
                         <h1 className="text-2xl font-bold text-gray-900">Parent Dashboard</h1>
                         <p className="text-sm text-gray-500">Follow each child's lessons and progress in one place.</p>
                     </div>
-                    <button
-                        onClick={() => router.push('/find-tutors')}
-                        className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
-                    >
-                        <Search className="w-4 h-4" /> Find a Tutor
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <SignOutButton />
+                        <button
+                            onClick={() => router.push('/find-tutors')}
+                            className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                        >
+                            <Search className="w-4 h-4" /> Find a Tutor
+                        </button>
+                    </div>
                 </div>
 
                 {notice && (
@@ -740,7 +737,6 @@ export default function ParentDashboardPage() {
                     tutorName="SabiLearn Team"
                 />
             )}
-            <Footer />
         </div>
     );
 }

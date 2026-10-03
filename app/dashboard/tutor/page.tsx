@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Header } from '@/components/header';
-import { Footer } from '@/components/footer';
+import { SignOutButton } from '@/components/SignOutButton';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { toast } from 'sonner';
 import {
@@ -210,14 +209,12 @@ export default function TutorDashboardPage() {
     if (!user && !loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                         <p className="text-lg text-gray-600 mb-4">Sign in to view your dashboard.</p>
                         <button onClick={() => router.push('/sign-in')} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
                     </div>
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -225,11 +222,9 @@ export default function TutorDashboardPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="w-10 h-10 animate-spin text-green-600" />
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -237,7 +232,6 @@ export default function TutorDashboardPage() {
     if (!tutor) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center px-4">
                     <div className="bg-white rounded-2xl p-10 border border-gray-200 text-center max-w-md">
                         <h2 className="text-xl font-bold text-gray-900 mb-2">Finish your tutor profile</h2>
@@ -247,7 +241,6 @@ export default function TutorDashboardPage() {
                         </button>
                     </div>
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -323,7 +316,6 @@ export default function TutorDashboardPage() {
 
     return (
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-            <Header />
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
                 {/* Profile header */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
@@ -345,9 +337,12 @@ export default function TutorDashboardPage() {
                             {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Rate not set</span>}
                         </p>
                     </div>
-                    <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-green-700 font-semibold hover:underline">
-                        View public profile →
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <SignOutButton />
+                        <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-green-700 font-semibold hover:underline">
+                            View public profile →
+                        </button>
+                    </div>
                 </div>
 
                 {/* Admin requests */}
@@ -722,7 +717,6 @@ export default function TutorDashboardPage() {
                 </div>
             )}
             </main>
-            <Footer />
         </div>
     );
 }

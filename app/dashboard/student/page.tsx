@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Header } from '@/components/header';
-import { Footer } from '@/components/footer';
+import { SignOutButton } from '@/components/SignOutButton';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { toast } from 'sonner';
 import {
@@ -200,14 +199,12 @@ export default function StudentDashboardPage() {
     if (!user && !loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                         <p className="text-lg text-gray-600 mb-4">Sign in to view your dashboard.</p>
                         <button onClick={() => router.push('/sign-in')} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
                     </div>
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -215,11 +212,9 @@ export default function StudentDashboardPage() {
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-                <Header />
                 <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="w-10 h-10 animate-spin text-green-600" />
                 </div>
-                <Footer />
             </div>
         );
     }
@@ -283,28 +278,30 @@ export default function StudentDashboardPage() {
 
     return (
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
-            <Header />
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
                 {/* Header */}
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
-                    <h1 className="text-2xl font-bold text-gray-900">
-                        Welcome back{student?.name ? `, ${student.name.split(' ')[0]}` : ''} 👋
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-0.5">Track your lessons, payments and favorite tutors.</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {myCode && (
-                            <button
-                                onClick={() => { navigator.clipboard.writeText(myCode); toast.success(`Code ${myCode} copied.`); }}
-                                title="Click to copy"
-                                className="text-xs font-mono font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-md hover:bg-green-100 transition-colors"
-                            >
-                                My code: {myCode} ⧉
-                            </button>
-                        )}
-                        {parentLinked && (
-                            <span className="text-xs text-gray-400">Linked to a family account ✓</span>
-                        )}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex items-start justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">
+                            Welcome back{student?.name ? `, ${student.name.split(' ')[0]}` : ''} 👋
+                        </h1>
+                        <p className="text-sm text-gray-500 mt-0.5">Track your lessons, payments and favorite tutors.</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {myCode && (
+                                <button
+                                    onClick={() => { navigator.clipboard.writeText(myCode); toast.success(`Code ${myCode} copied.`); }}
+                                    title="Click to copy"
+                                    className="text-xs font-mono font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-md hover:bg-green-100 transition-colors"
+                                >
+                                    My code: {myCode} ⧉
+                                </button>
+                            )}
+                            {parentLinked && (
+                                <span className="text-xs text-gray-400">Linked to a family account ✓</span>
+                            )}
+                        </div>
                     </div>
+                    <SignOutButton />
                 </div>
 
                 {/* Family linking for self-signed-up students */}
@@ -582,7 +579,6 @@ export default function StudentDashboardPage() {
                     tutorName="SabiLearn Team"
                 />
             )}
-            <Footer />
         </div>
     );
 }
