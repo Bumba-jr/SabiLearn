@@ -156,6 +156,35 @@ export default function ClassroomPage() {
         }
     };
 
+    // Countdown to the booked end time
+    const classEndMs = klass ? new Date(klass.started_at).getTime() + klass.session.duration_minutes * 60_000 : 0;
+    const isLiveNow = klass?.status === 'live';
+    const remainingMs = klass && isLiveNow ? classEndMs - now : 0;
+    const timesUp = isLiveNow && remainingMs <= 0;
+
+    // When the booked time runs out the class ends itself — the tutor's client
+    // finalizes it, and everyone sees the ended state.
+    const autoEndedRef = useRef(false);
+    useEffect(() => {
+        if (!klass || klass.status !== 'live' || !viewer.isTutor) return;
+        if (classEndMs - now > 0) { autoEndedRef.current = false; return; }
+        if (autoEndedRef.current) return;
+        autoEndedRef.current = true;
+        (async () => {
+            try {
+                const res = await fetch(`/api/classes/${classId}`, { method: 'DELETE' });
+                if (res.ok) {
+                    toast('Time is up — the class was ended automatically.');
+                    await load();
+                } else {
+                    autoEndedRef.current = false;
+                }
+            } catch {
+                autoEndedRef.current = false;
+            }
+        })();
+    }, [klass, now, viewer.isTutor, classEndMs, classId, load]);
+
     if (!user && !loading) {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
@@ -228,13 +257,25 @@ export default function ClassroomPage() {
                                     <CheckCircle2 className="w-4 h-4" /> Class ended
                                 </span>
                             )}
-                            {isLate && (
+                            {timesUp && (
+                                <span className="flex items-center gap-1.5 bg-orange-500/20 text-orange-300 px-3 py-1.5 rounded-full text-xs font-bold">
+                                    <Timer className="w-3.5 h-3.5" /> TIME&apos;S UP — ending class
+                                </span>
+                            )}
+                            {!timesUp && isLate && (
                                 <span className="text-xs text-orange-300">Running over the booked {klass.session.duration_minutes} min</span>
                             )}
                         </div>
-                        <div className="flex items-center gap-2 text-3xl font-mono font-bold tabular-nums">
-                            <Timer className="w-6 h-6 text-green-400" />
-                            {String(elapsedMin).padStart(2, '0')}:{String(elapsedSec).padStart(2, '0')}
+                        <div className="text-right">
+                            <div className={`flex items-center justify-end gap-2 text-3xl font-mono font-bold tabular-nums ${timesUp ? 'text-orange-400' : remainingMs > 0 ? 'text-white' : ''}`}>
+                                <Timer className={`w-6 h-6 ${timesUp ? 'text-orange-400' : 'text-green-400'}`} />
+                                {isLive && remainingMs > 0
+                                    ? `${String(Math.floor(remainingMs / 60000)).padStart(2, '0')}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, '0')}`
+                                    : `${String(elapsedMin).padStart(2, '0')}:${String(elapsedSec).padStart(2, '0')}`}
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                                {isLive && remainingMs > 0 ? 'time left' : isLive ? 'over booked time' : 'total duration'}
+                            </p>
                         </div>
                     </div>
 

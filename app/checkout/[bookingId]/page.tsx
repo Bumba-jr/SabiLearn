@@ -15,6 +15,10 @@ interface Booking {
     status: string;
     amount: number | null;
     payment_status: string;
+    plan_period?: string | null;
+    sessions_per_week?: number | null;
+    hours_per_session?: number | null;
+    plan_total?: number | null;
     tutor?: { id: string; name: string; avatar_url?: string | null; hourly_rate?: number | null } | null;
     student?: { id: string; name: string } | null;
 }
@@ -277,6 +281,22 @@ export default function CheckoutPage() {
                                         <span className="font-medium text-gray-900">{naira(rate)}/hr</span>
                                     </div>
                                 ) : null}
+                                {booking.plan_period && booking.plan_period !== 'single' && (
+                                    <>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-600">Lessons per week</span>
+                                            <span className="font-medium text-gray-900">{booking.sessions_per_week || 1}×</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-600">Hours per lesson</span>
+                                            <span className="font-medium text-gray-900">{booking.hours_per_session || 1} hr</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-gray-600">Plan</span>
+                                            <span className="font-medium capitalize text-gray-900">{booking.plan_period}</span>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             {/* Total */}
@@ -285,7 +305,7 @@ export default function CheckoutPage() {
                                     Total Due
                                 </span>
                                 <span className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'var(--font-outfit)' }}>
-                                    {naira(booking.amount || 0)}
+                                    {naira(booking.plan_total || booking.amount || 0)}
                                 </span>
                             </div>
 
@@ -300,7 +320,7 @@ export default function CheckoutPage() {
                                 ) : (
                                     <Lock className="w-5 h-5" />
                                 )}
-                                <span>Pay {naira(booking.amount || 0)}</span>
+                                <span>Pay {naira(booking.plan_total || booking.amount || 0)}</span>
                             </button>
                             <p className="flex items-center justify-center gap-2 text-xs text-gray-400 mt-4">
                                 <Lock className="w-3.5 h-3.5" />

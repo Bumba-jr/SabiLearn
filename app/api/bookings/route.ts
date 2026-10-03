@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-server';
+import { calcLessonPlan, type PlanPeriod } from '@/lib/lesson-plan';
 
 // Helper: verify the bearer token and return the auth user
 async function getAuthUser(req: Request) {
@@ -88,6 +89,17 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const { tutorId, subject, scheduledAt, durationMinutes, mode, address, notes } = body;
+        // Lesson-plan fields: bookings can be a one-off lesson or a recurring
+        // plan billed weekly/monthly/yearly. hoursPerSession wins over the
+        // legacy durationMinutes when present.
+        const legacyMinutes = Number(durationMinutes) > 0 ? Number(durationMinutes) : 60;
+        const hoursPerSession = Number(body?.hoursPerSession) > 0
+            ? Number(body.hoursPerSession)
+            : Math.round((legacyMinutes / 60) * 2) / 2;
+        const sessionsPerWeek = Number(body?.sessionsPerWeek) > 0 ? Math.min(7, Math.round(Number(body.sessionsPerWeek))) : 1;
+        const planPeriod: PlanPeriod = ['single', 'weekly', 'monthly', 'yearly'].includes(body?.planPeriod)
+            ? body.planPeriod
+            : 'single';
 
         if (!tutorId || !subject || !scheduledAt) {
             return NextResponse.json(
@@ -173,34 +185,67 @@ export async function POST(req: Request) {
         // Price the booking from the tutor's hourly rate. The sessions table
         // requires a non-null amount, so tutors without a rate default to 0
         // (payment is settled after the tutor confirms).
-        const duration = Number(durationMinutes) || 60;
-        const amount = tutor.hourly_rate && tutor.hourly_rate > 0
-            ? Math.round((tutor.hourly_rate * duration) / 60)
-            : 0;
+        const duration = hoursPerSession ? Math.round(hoursPerSession * 60) : 60;
+        const plan = calcLessonPlan({
+            hourlyRate: tutor.hourly_rate || 0,
+            hoursPerSession: hoursPerSession || 1,
+            sessionsPerWeek,
+            period: planPeriod,
+        });
 
-        const { data: booking, error: insertError } = await supabaseAdmin
-            .from('sessions')
-            .insert({
-                tutor_id: tutor.id,
-                student_id: studentRow.id,
-                subject,
-                scheduled_at: new Date(scheduledAt).toISOString(),
-                duration_minutes: duration,
-                status: 'pending',
-                location_type: mode === 'home' ? 'home' : 'online',
-                location_address: address || null,
-                amount,
-                payment_status: 'unpaid',
-                notes: notes || null,
-            })
-            .select(`
-                *,
-                tutor:tutors(id, name, avatar_url, location, hourly_rate),
-                student:students(id, name, email)
-            `)
-            .single();
+        const baseInsert = {
+            tutor_id: tutor.id,
+            student_id: studentRow.id,
+            subject,
+            scheduled_at: new Date(scheduledAt).toISOString(),
+            duration_minutes: duration,
+            status: 'pending',
+            location_type: mode === 'home' ? 'home' : 'online',
+            location_address: address || null,
+            payment_status: 'unpaid',
+            notes: notes || null,
+        };
 
-        if (insertError) {
+        const selectBooking = `
+            *,
+            tutor:tutors(id, name, avatar_url, location, hourly_rate),
+            student:students(id, name, email)
+        `;
+
+        // Plan bookings store their period + total for the checkout page. If the
+        // plan columns don't exist yet (migration 013 not applied), fall back to
+        // a plain single-lesson booking priced per session.
+        let booking = null;
+        let insertError = null;
+        if (planPeriod !== 'single') {
+            ({ data: booking, error: insertError } = await supabaseAdmin
+                .from('sessions')
+                .insert({
+                    ...baseInsert,
+                    amount: plan.total,
+                    plan_period: planPeriod,
+                    sessions_per_week: sessionsPerWeek,
+                    hours_per_session: hoursPerSession || 1,
+                    plan_total: plan.total,
+                })
+                .select(selectBooking)
+                .single());
+            if (insertError && (insertError as { code?: string }).code === '42703') {
+                ({ data: booking, error: insertError } = await supabaseAdmin
+                    .from('sessions')
+                    .insert({ ...baseInsert, amount: plan.total })
+                    .select(selectBooking)
+                    .single());
+            }
+        } else {
+            ({ data: booking, error: insertError } = await supabaseAdmin
+                .from('sessions')
+                .insert({ ...baseInsert, amount: plan.perSession })
+                .select(selectBooking)
+                .single());
+        }
+
+        if (insertError || !booking) {
             console.error('Error creating booking:', insertError);
             return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 });
         }

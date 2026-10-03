@@ -6,6 +6,7 @@ import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Star, MapPin, CheckCircle, Briefcase, ArrowLeft, Calendar, MessageCircle, Shield, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthProvider';
+import { calcLessonPlan, PERIOD_LABELS, PERIOD_DISCOUNT, type PlanPeriod } from '@/lib/lesson-plan';
 import { SignInModal } from '@/components/SignInModal';
 import { getCachedTutor, setCachedTutor } from '@/lib/tutor-cache';
 import { ChatPopup } from '@/components/ChatPopup';
@@ -99,7 +100,19 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
         address: '',
         notes: '',
         childId: '',
+        planPeriod: 'monthly' as PlanPeriod,
+        sessionsPerWeek: 2,
     });
+
+    const planPrice = (() => {
+        if (!tutor?.hourlyRate) return null;
+        return calcLessonPlan({
+            hourlyRate: tutor.hourlyRate,
+            hoursPerSession: bookingForm.durationMinutes / 60,
+            sessionsPerWeek: bookingForm.sessionsPerWeek,
+            period: bookingForm.planPeriod,
+        });
+    })();
 
     useEffect(() => {
         if (!user) return;
@@ -649,16 +662,6 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                             </button>
                         </div>
 
-                        {tutor.hourlyRate ? (
-                            <div className="bg-green-50 border border-green-100 rounded-xl p-4 mb-6 flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Estimated cost</span>
-                                <span className="font-bold text-green-700 text-lg">
-                                    ₦{Math.round((tutor.hourlyRate * bookingForm.durationMinutes) / 60).toLocaleString()}
-                                    <span className="text-xs font-normal text-gray-500"> for {bookingForm.durationMinutes} min</span>
-                                </span>
-                            </div>
-                        ) : null}
-
                         <div className="space-y-4">
                             {/* Who is this lesson for? (parents) */}
                             {userRole === 'parent' && (
@@ -708,22 +711,70 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                 />
                             </div>
 
-                            {/* Duration */}
+                            {/* Hours per lesson */}
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Duration</label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Hours per lesson</label>
                                 <div className="flex gap-2">
-                                    {[60, 90, 120].map((d) => (
+                                    {[60, 90, 120, 180].map((d) => (
                                         <button
                                             key={d}
                                             type="button"
                                             onClick={() => setBookingForm((f) => ({ ...f, durationMinutes: d }))}
                                             className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
                                                 bookingForm.durationMinutes === d
-                                                    ? 'bg-green-600 text-white'
+                                                    ? 'bg-primary text-white'
                                                     : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
                                             }`}
                                         >
                                             {d / 60} hr{d > 60 ? 's' : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Lessons per week */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Lessons per week</label>
+                                <div className="flex gap-2">
+                                    {[1, 2, 3, 4, 5].map((d) => (
+                                        <button
+                                            key={d}
+                                            type="button"
+                                            onClick={() => setBookingForm((f) => ({ ...f, sessionsPerWeek: d }))}
+                                            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                                                bookingForm.sessionsPerWeek === d
+                                                    ? 'bg-primary text-white'
+                                                    : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {d}×{d > 1 ? ' week' : ''}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-gray-400 mt-1">How many days a week will the tutor teach?</p>
+                            </div>
+
+                            {/* Billing period */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Billing period</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {(['single', 'weekly', 'monthly', 'yearly'] as PlanPeriod[]).map((period) => (
+                                        <button
+                                            key={period}
+                                            type="button"
+                                            onClick={() => setBookingForm((f) => ({ ...f, planPeriod: period }))}
+                                            className={`py-2.5 px-3 rounded-xl text-sm font-medium transition-all text-left ${
+                                                bookingForm.planPeriod === period
+                                                    ? 'bg-primary/10 text-primary border-2 border-primary'
+                                                    : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {PERIOD_LABELS[period]}
+                                            {PERIOD_DISCOUNT[period] > 0 && (
+                                                <span className="block text-[11px] text-emerald-600 font-semibold">
+                                                    Save {Math.round(PERIOD_DISCOUNT[period] * 100)}%
+                                                </span>
+                                            )}
                                         </button>
                                     ))}
                                 </div>
@@ -778,10 +829,40 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                 />
                             </div>
 
+                            {/* Live price breakdown */}
+                            {planPrice && (
+                                <div className="bg-green-50 border border-green-100 rounded-xl p-4 space-y-1.5 text-sm">
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Per lesson ({bookingForm.durationMinutes / 60} hr)</span>
+                                        <span>₦{planPrice.perSession.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Per week ({bookingForm.sessionsPerWeek}× lessons)</span>
+                                        <span>₦{planPrice.perWeek.toLocaleString()}</span>
+                                    </div>
+                                    {bookingForm.planPeriod !== 'single' && (
+                                        <div className="flex justify-between text-gray-600">
+                                            <span>For {PERIOD_LABELS[bookingForm.planPeriod].toLowerCase()} ({planPrice.sessionsInPeriod} lessons)</span>
+                                            <span>₦{planPrice.subtotal.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                    {planPrice.discount > 0 && (
+                                        <div className="flex justify-between text-emerald-600 font-medium">
+                                            <span>Plan discount</span>
+                                            <span>−₦{planPrice.discount.toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between pt-2 border-t border-green-200 font-bold text-gray-900">
+                                        <span>Total due</span>
+                                        <span>₦{planPrice.total.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            )}
+
                             <button
                                 onClick={handleBookingSubmit}
                                 disabled={submittingBooking}
-                                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                                className="w-full bg-primary hover:bg-primary/90 disabled:opacity-60 text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
                             >
                                 {submittingBooking ? (
                                     <>
@@ -793,7 +874,7 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                 )}
                             </button>
                             <p className="text-xs text-gray-500 text-center">
-                                The tutor will confirm before anything is final. No payment is taken now.
+                                The tutor will confirm before anything is final. Payment is only taken after they accept.
                             </p>
                         </div>
                     </div>
