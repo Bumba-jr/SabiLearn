@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-server';
+import { dedupeRepeatedText } from '@/lib/utils/text-dedupe';
 
 export async function GET(request: Request) {
     try {
@@ -109,7 +110,7 @@ export async function GET(request: Request) {
                 id: tutor.id,
                 name: tutor.name,
                 university: latestExperience?.institute || 'Not specified',
-                description: tutor.bio || 'No description available',
+                description: dedupeRepeatedText(tutor.bio) || 'No description available',
                 latestExperience: latestExperience ? {
                     post: latestExperience.post || latestExperience.title,
                     institute: latestExperience.institute || latestExperience.company,

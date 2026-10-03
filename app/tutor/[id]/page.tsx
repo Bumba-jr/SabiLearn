@@ -7,6 +7,8 @@ import { Footer } from '@/components/footer';
 import { Star, MapPin, CheckCircle, Briefcase, ArrowLeft, Calendar, MessageCircle, Shield, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { SignInModal } from '@/components/SignInModal';
+import { getCachedTutor, setCachedTutor } from '@/lib/tutor-cache';
+import { ChatPopup } from '@/components/ChatPopup';
 import { toast } from 'sonner';
 
 interface ReviewItem {
@@ -46,6 +48,7 @@ interface Tutor {
     yearsOfExperience?: number;
     gradeLevels?: string[];
     examTypes?: string[];
+    weeklyAvailability?: Record<string, Array<{ from: string; to: string }>> | null;
     recentReviews?: ReviewItem[];
 }
 
@@ -59,6 +62,22 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
     // Booking form state
     const { user, session } = useAuth();
     const [showBookingModal, setShowBookingModal] = useState(false);
+    const weeklyScheduleText = (() => {
+        const sched = tutor?.weeklyAvailability as Record<string, Array<{ from: string; to: string }>> | null | undefined;
+        if (!sched || typeof sched !== 'object') return null;
+        const names: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+        const lines = Object.entries(sched)
+            .filter(([, ranges]) => Array.isArray(ranges) && ranges.length > 0)
+            .map(([day, ranges]) => `${names[day] || day}: ${ranges.map((r) => `${r.from}–${r.to}`).join(', ')}`);
+        return lines.length > 0 ? lines : null;
+    })();
+    const [showChat, setShowChat] = useState(false);
+    const [showReport, setShowReport] = useState(false);
+    const [myChildren, setMyChildren] = useState<Array<{ id: string; name: string }>>([]);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [reportReason, setReportReason] = useState('');
+    const [reportDetails, setReportDetails] = useState('');
+    const [sendingReport, setSendingReport] = useState(false);
     const [showSignInModal, setShowSignInModal] = useState(false);
     const [submittingBooking, setSubmittingBooking] = useState(false);
     const [bookingDone, setBookingDone] = useState(false);
@@ -69,20 +88,46 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
         mode: 'online' as 'online' | 'home',
         address: '',
         notes: '',
+        childId: '',
     });
 
     useEffect(() => {
+        if (!user) return;
+        (async () => {
+            try {
+                const res = await fetch('/api/profile');
+                if (!res.ok) return;
+                const profile = await res.json();
+                if (profile?.role) {
+                    setUserRole(profile.role);
+                    if (profile.role === 'parent') {
+                        const cRes = await fetch('/api/parent/children');
+                        if (cRes.ok) {
+                            const cData = await cRes.json();
+                            setMyChildren(cData.children || []);
+                        }
+                    }
+                }
+            } catch { /* non-blocking */ }
+        })();
+    }, [user]);
+
+    useEffect(() => {
         const fetchTutor = async () => {
+            const cached = getCachedTutor(resolvedParams.id);
+            if (cached) {
+                setTutor(cached as Tutor);
+                setLoading(false);
+                return;
+            }
             try {
                 setLoading(true);
-                console.log('Fetching tutor with ID:', resolvedParams.id); // Debug log
                 const response = await fetch(`/api/tutors/${resolvedParams.id}`);
                 const data = await response.json();
 
-                console.log('API response:', response.status, data); // Debug log
-
                 if (response.ok) {
                     setTutor(data.tutor);
+                    setCachedTutor(resolvedParams.id, data.tutor);
                 } else {
                     setError(data.error || 'Failed to fetch tutor');
                 }
@@ -111,12 +156,48 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
         }
     }, [tutor]);
 
+    // Reset the child choice whenever the modal opens — never preselect,
+    // so a careless parent can't double-book the first child by accident.
+    useEffect(() => {
+        if (showBookingModal) {
+            setBookingForm((f) => ({ ...f, childId: '' }));
+        }
+    }, [showBookingModal]);
+
     const handleBookClick = () => {
         if (!user) {
             setShowSignInModal(true);
             return;
         }
         setShowBookingModal(true);
+    };
+
+    const submitReport = async () => {
+        if (!reportReason || !reportDetails.trim()) {
+            toast.error('Choose a reason and tell us what happened.');
+            return;
+        }
+        setSendingReport(true);
+        try {
+            const res = await fetch('/api/reports', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tutorId: tutor!.id, reason: reportReason, details: reportDetails }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not file the report.');
+                return;
+            }
+            toast.success('Report sent to the SabiLearn team. Thank you.');
+            setShowReport(false);
+            setReportReason('');
+            setReportDetails('');
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setSendingReport(false);
+        }
     };
 
     const handleBookingSubmit = async () => {
@@ -128,9 +209,32 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
             toast.error('Please choose a subject and a date/time.');
             return;
         }
+        if (userRole === 'parent' && myChildren.length > 0 && !bookingForm.childId) {
+            toast.error('Please choose which child this lesson is for — don\'t leave it on the default.');
+            return;
+        }
         if (bookingForm.mode === 'home' && !bookingForm.address.trim()) {
             toast.error('Please enter the lesson address for a home lesson.');
             return;
+        }
+
+        // Soft-enforce the tutor's published free hours (only when they set them)
+        const sched = tutor?.weeklyAvailability as Record<string, Array<{ from: string; to: string }>> | null | undefined;
+        if (sched && typeof sched === 'object') {
+            const chosen = new Date(bookingForm.scheduledAt);
+            const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][chosen.getDay()];
+            const ranges = sched[dayKey] || [];
+            const minutes = chosen.getHours() * 60 + chosen.getMinutes();
+            const toMinutes = (hhmm: string) => {
+                const [h, m] = hhmm.split(':').map(Number);
+                return h * 60 + m;
+            };
+            const inside = ranges.some((r) => minutes >= toMinutes(r.from) && minutes <= toMinutes(r.to));
+            if (ranges.length > 0 && !inside) {
+                const pretty = ranges.map((r) => `${r.from}–${r.to}`).join(', ');
+                toast.error(`${tutor?.name || 'This tutor'} is not available then. Free hours on ${dayKey.toUpperCase()}: ${pretty}.`);
+                return;
+            }
         }
 
         try {
@@ -153,7 +257,9 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
             }
             setShowBookingModal(false);
             setBookingDone(true);
-            toast.success('Booking request sent!');
+            toast.success(data.bookedFor
+                ? `Booking request sent for ${data.bookedFor}!`
+                : 'Booking request sent!');
         } catch {
             toast.error('Could not reach the booking service. Please try again.');
         } finally {
@@ -406,6 +512,12 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                 <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
                                     {tutor.availability}
                                 </div>
+                                {weeklyScheduleText && (
+                                    <div className="text-sm text-gray-600 bg-green-50 border border-green-100 p-3 rounded-lg mt-2">
+                                        <p className="font-semibold text-green-800 mb-1">Free hours</p>
+                                        {weeklyScheduleText.map((line) => <p key={line}>{line}</p>)}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Action Buttons */}
@@ -434,7 +546,16 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                         Book a Session
                                     </button>
 
-                                    <button className="w-full bg-white hover:bg-gray-50 text-gray-700 font-semibold py-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            if (!user) {
+                                                setShowSignInModal(true);
+                                                return;
+                                            }
+                                            setShowChat(true);
+                                        }}
+                                        className="w-full bg-white hover:bg-gray-50 text-gray-700 font-semibold py-4 rounded-xl border border-gray-200 transition-colors flex items-center justify-center gap-2"
+                                    >
                                         <MessageCircle className="w-5 h-5" />
                                         Send Message
                                     </button>
@@ -446,6 +567,12 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                 <Shield className="w-4 h-4" />
                                 <span>Payments secured by fintech infrastructure</span>
                             </div>
+                            <button
+                                onClick={() => (user ? setShowReport(true) : setShowSignInModal(true))}
+                                className="mt-3 text-xs text-gray-400 hover:text-red-500 transition-colors w-full text-center"
+                            >
+                                ⚑ Report this tutor
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -513,6 +640,29 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                         ) : null}
 
                         <div className="space-y-4">
+                            {/* Who is this lesson for? (parents) */}
+                            {userRole === 'parent' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Who is this lesson for?</label>
+                                    {myChildren.length === 0 ? (
+                                        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm text-orange-700">
+                                            You haven't added a child yet. Add one from your Parent Dashboard, then book.
+                                        </div>
+                                    ) : (
+                                        <select
+                                            value={bookingForm.childId}
+                                            onChange={(e) => setBookingForm((f) => ({ ...f, childId: e.target.value }))}
+                                            className={`w-full border rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600 ${bookingForm.childId ? 'border-gray-300' : 'border-orange-300 bg-orange-50'}`}
+                                        >
+                                            <option value="">Select which child…</option>
+                                            {myChildren.map((c) => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Subject */}
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Subject</label>
@@ -637,6 +787,58 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                     setShowSignInModal(false);
                     setShowBookingModal(true);
                 }}
+            />
+
+            {showReport && (
+                <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-gray-900">Report {tutor.name}</h3>
+                            <button onClick={() => setShowReport(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Reason</label>
+                        <select
+                            value={reportReason}
+                            onChange={(e) => setReportReason(e.target.value)}
+                            className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600 mb-3"
+                        >
+                            <option value="">Choose a reason…</option>
+                            <option>Inappropriate behavior</option>
+                            <option>Did not show up</option>
+                            <option>Misrepresentation / fake credentials</option>
+                            <option>Pricing or payment issue</option>
+                            <option>Poor teaching quality</option>
+                            <option>Safety concern</option>
+                            <option>Other</option>
+                        </select>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">What happened?</label>
+                        <textarea
+                            value={reportDetails}
+                            onChange={(e) => setReportDetails(e.target.value)}
+                            rows={4}
+                            placeholder="Describe the issue — the SabiLearn team will follow up with you."
+                            className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm outline-none focus:border-green-600 resize-none mb-4"
+                        />
+                        <button
+                            onClick={submitReport}
+                            disabled={sendingReport}
+                            className="w-full bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                        >
+                            {sendingReport && <Loader2 className="w-4 h-4 animate-spin" />}
+                            Send report
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <ChatPopup
+                isOpen={showChat}
+                onClose={() => setShowChat(false)}
+                tutorId={tutor.id}
+                tutorName={tutor.name}
+                tutorAvatar={tutor.image || null}
             />
 
             <Footer />

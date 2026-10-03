@@ -1,22 +1,53 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { createClient, type User } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Authenticate from the browser session cookie (set by @supabase/ssr),
+// falling back to a Bearer token for callers that send one.
+async function getAuthUser(req: Request): Promise<User | null> {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader) {
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) return user;
+    }
+
+    const cookieStore = await cookies();
+    const supabaseSSR = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() {
+                    return cookieStore.getAll();
+                },
+                setAll(cookiesToSet) {
+                    for (const { name, value, options } of cookiesToSet) {
+                        try {
+                            cookieStore.set(name, value, options);
+                        } catch {
+                            // Read-only in a server component render; safe to ignore in a route handler.
+                        }
+                    }
+                },
+            },
+        }
+    );
+    const { data: { user } } = await supabaseSSR.auth.getUser();
+    return user;
+}
+
 export async function POST(req: Request) {
     try {
-        const authHeader = req.headers.get('authorization');
-        if (!authHeader) {
-            return NextResponse.json({ error: 'Unauthorized - No auth header' }, { status: 401 });
-        }
+        const user = await getAuthUser(req);
 
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-        if (authError || !user) {
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized - Invalid token' }, { status: 401 });
         }
 
@@ -83,15 +114,9 @@ export async function POST(req: Request) {
 
 export async function GET(req: Request) {
     try {
-        const authHeader = req.headers.get('authorization');
-        if (!authHeader) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const user = await getAuthUser(req);
 
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-        if (authError || !user) {
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

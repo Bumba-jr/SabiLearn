@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-server';
+import { dedupeRepeatedText } from '@/lib/utils/text-dedupe';
 
 export async function GET(
     request: Request,
@@ -131,8 +132,8 @@ export async function GET(
             id: tutor.id,
             name: tutor.name,
             university: latestExperience?.institute || 'Not specified',
-            description: tutor.bio || 'No description available',
-            bio: tutor.bio || 'No bio available',
+            description: dedupeRepeatedText(tutor.bio) || 'No description available',
+            bio: dedupeRepeatedText(tutor.bio) || 'No bio available',
             latestExperience: latestExperience ? {
                 post: latestExperience.post || latestExperience.title,
                 institute: latestExperience.institute || latestExperience.company,
@@ -150,6 +151,7 @@ export async function GET(
             gradeLevels: tutor.grade_levels || tutor.levels || [],
             examTypes: tutor.exam_types || [],
             yearsOfExperience: yearsOfExperience,
+            weeklyAvailability: tutor.availability || null,
             recentReviews: recentReviews
         };
 

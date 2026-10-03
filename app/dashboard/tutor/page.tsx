@@ -1,248 +1,674 @@
-import { getServerUser } from '@/lib/auth/supabase-auth';
-import { redirect } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-import { SignOutButton } from '@/components/SignOutButton';
-import { BookingsList } from '@/components/BookingsList';
+'use client';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Header } from '@/components/header';
+import { Footer } from '@/components/footer';
+import { useAuth } from '@/lib/auth/AuthProvider';
+import { toast } from 'sonner';
+import {
+    Star, Calendar, Wallet, CheckCircle2, Clock, X, Check, Loader2,
+    MapPin, Video, ChevronRight, Plus, Trash2, MessageCircle, Radio, Zap,
+} from 'lucide-react';
+import { ChatPopup } from '@/components/ChatPopup';
+import { Megaphone } from 'lucide-react';
 
-async function getTutorData(authUserId: string) {
-    try {
-        console.log('🔍 Fetching tutor data for user:', authUserId);
-
-        const { data, error } = await supabase
-            .from('tutors')
-            .select('*')
-            .eq('auth_user_id', authUserId)
-            .single();
-
-        if (error) {
-            console.error('❌ Error fetching tutor:', {
-                message: error.message,
-                code: error.code,
-                details: error.details,
-                hint: error.hint
-            });
-
-            // If no rows found, it means user hasn't completed onboarding
-            if (error.code === 'PGRST116') {
-                console.log('📝 No tutor record found - user needs to complete onboarding');
-                return null;
-            }
-
-            // For other errors, still return null but log more details
-            console.error('❌ Database error details:', error);
-            return null;
-        }
-
-        console.log('✅ Tutor data retrieved successfully');
-        return data;
-    } catch (error) {
-        console.error('❌ Unexpected error in getTutorData:', error);
-        return null;
-    }
+interface Booking {
+    id: string;
+    subject: string;
+    scheduled_at: string;
+    duration_minutes: number;
+    status: string;
+    location_type: string;
+    location_address: string | null;
+    amount: number | null;
+    payment_status: string;
+    notes: string | null;
+    student?: { id: string; name: string; email: string } | null;
+    tutor?: { id: string; name: string } | null;
 }
 
-export default async function TutorDashboardPage() {
-    const user = await getServerUser();
+interface DayRange { from: string; to: string }
+type Availability = Record<string, DayRange[]>;
 
-    if (!user) {
-        redirect('/sign-in');
-    }
+const DAYS = [
+    { key: 'mon', label: 'Monday' },
+    { key: 'tue', label: 'Tuesday' },
+    { key: 'wed', label: 'Wednesday' },
+    { key: 'thu', label: 'Thursday' },
+    { key: 'fri', label: 'Friday' },
+    { key: 'sat', label: 'Saturday' },
+    { key: 'sun', label: 'Sunday' },
+];
 
-    console.log('🔍 Loading tutor dashboard for user:', user.id);
+const naira = (n: number) => `₦${Math.round(n).toLocaleString()}`;
+const fmtDate = (ts: string) => new Date(ts).toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' });
+const fmtTime = (ts: string) => new Date(ts).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
 
-    const tutor = await getTutorData(user.id);
+export default function TutorDashboardPage() {
+    const { user, session } = useAuth();
+    const router = useRouter();
+    const [loading, setLoading] = useState(true);
+    const [tutor, setTutor] = useState<any>(null);
+    const [incoming, setIncoming] = useState<Booking[]>([]);
+    const [upcoming, setUpcoming] = useState<Booking[]>([]);
+    const [past, setPast] = useState<Booking[]>([]);
+    const [stats, setStats] = useState({ pendingCount: 0, upcomingCount: 0, completedCount: 0, earningsTotal: 0, unreadMessages: 0 });
+    const [tab, setTab] = useState<'overview' | 'requests' | 'sessions' | 'availability' | 'messages'>('overview');
+    const [actingOn, setActingOn] = useState<string | null>(null);
+    const [conversations, setConversations] = useState<any[]>([]);
+    const [activeChat, setActiveChat] = useState<{ id: string; name: string; avatar: string | null } | null>(null);
 
-    if (!tutor) {
-        console.log('❌ No tutor record found, redirecting to onboarding');
+    // Availability editor state
+    const [availability, setAvailability] = useState<Availability>({});
+    const [availabilityDirty, setAvailabilityDirty] = useState(false);
+    const [savingAvailability, setSavingAvailability] = useState(false);
+    const [startingClass, setStartingClass] = useState<string | null>(null);
+    const [instantOpen, setInstantOpen] = useState(false);
+    const [instantStudents, setInstantStudents] = useState<any[]>([]);
+    const [instantLoading, setInstantLoading] = useState(false);
+    const [adminRequests, setAdminRequests] = useState<any[]>([]);
+    const [showAdminChat, setShowAdminChat] = useState(false);
+
+    const loadDashboard = useCallback(async () => {
+        try {
+            const res = await fetch('/api/dashboard');
+            if (res.status === 401) {
+                router.push('/sign-in');
+                return;
+            }
+            const data = await res.json();
+            setTutor(data.tutor);
+            setIncoming(data.incoming || []);
+            setUpcoming(data.upcoming || []);
+            setPast(data.past || []);
+            setStats(data.stats || { pendingCount: 0, upcomingCount: 0, completedCount: 0, earningsTotal: 0, unreadMessages: 0 });
+            if (data.tutor?.availability) setAvailability(data.tutor.availability);
+            setAdminRequests(data.adminRequests || []);
+            const msgRes = await fetch('/api/messages');
+            if (msgRes.ok) {
+                const msgData = await msgRes.json();
+                setConversations(msgData.conversations || []);
+            }
+        } catch {
+            toast.error('Could not load your dashboard. Please refresh.');
+        } finally {
+            setLoading(false);
+        }
+    }, [router]);
+
+    useEffect(() => {
+        if (user) loadDashboard();
+        else setLoading(false);
+    }, [user, loadDashboard]);
+
+    const bookingAction = async (booking: Booking, action: 'accept' | 'decline') => {
+        if (!session?.access_token) return;
+        setActingOn(booking.id);
+        try {
+            const res = await fetch(`/api/bookings/${booking.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ action }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || `Could not ${action} the booking.`);
+                return;
+            }
+            toast.success(action === 'accept' ? 'Booking accepted! The student will be notified to pay.' : 'Booking declined.');
+            await loadDashboard();
+        } catch {
+            toast.error('Could not reach the server. Try again.');
+        } finally {
+            setActingOn(null);
+        }
+    };
+
+    const startClass = async (booking: Booking) => {
+        setStartingClass(booking.id);
+        try {
+            const res = await fetch('/api/classes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: booking.id }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not start the class.');
+                return;
+            }
+            router.push(`/class/${data.classId}`);
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setStartingClass(null);
+        }
+    };
+
+    const openInstantPicker = async () => {
+        setInstantOpen(true);
+        setInstantLoading(true);
+        try {
+            const res = await fetch('/api/tutor/students');
+            const data = await res.json();
+            setInstantStudents(data.students || []);
+        } catch {
+            toast.error('Could not load your students.');
+        } finally {
+            setInstantLoading(false);
+        }
+    };
+
+    const startInstantClass = async (studentId: string) => {
+        setStartingClass(studentId);
+        try {
+            const res = await fetch('/api/classes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ studentId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not start the class.');
+                return;
+            }
+            router.push(`/class/${data.classId}`);
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setStartingClass(null);
+        }
+    };
+
+    const saveAvailability = async () => {
+        setSavingAvailability(true);
+        try {
+            const res = await fetch('/api/tutor/availability', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ availability }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not save availability.');
+                return;
+            }
+            toast.success('Availability saved! Parents can now see your free hours.');
+            setAvailabilityDirty(false);
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setSavingAvailability(false);
+        }
+    };
+
+    if (!user && !loading) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center max-w-md mx-auto p-8">
-                    <div className="w-16 h-16 bg-[#FF6B35]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <svg className="w-8 h-8 text-[#FF6B35]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                        </svg>
+            <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+                <Header />
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                        <p className="text-lg text-gray-600 mb-4">Sign in to view your dashboard.</p>
+                        <button onClick={() => router.push('/sign-in')} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
                     </div>
-                    <h1 className="text-2xl font-outfit font-bold text-gray-900 mb-4">
-                        Complete Your Tutor Profile
-                    </h1>
-                    <p className="text-gray-600 font-inter mb-6">
-                        You need to complete your tutor onboarding to access your dashboard.
-                    </p>
-                    <a
-                        href="/onboarding/tutor"
-                        className="inline-flex items-center px-6 py-3 bg-[#FF6B35] text-white font-inter font-medium rounded-lg hover:bg-[#FF6B35]/90 transition-colors"
-                    >
-                        Complete Onboarding
-                        <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </a>
                 </div>
+                <Footer />
             </div>
         );
     }
 
-    console.log('✅ Tutor dashboard loaded successfully');
+    if (loading) {
+        return (
+            <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+                <Header />
+                <div className="flex-1 flex items-center justify-center">
+                    <Loader2 className="w-10 h-10 animate-spin text-green-600" />
+                </div>
+                <Footer />
+            </div>
+        );
+    }
+
+    if (!tutor) {
+        return (
+            <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+                <Header />
+                <div className="flex-1 flex items-center justify-center px-4">
+                    <div className="bg-white rounded-2xl p-10 border border-gray-200 text-center max-w-md">
+                        <h2 className="text-xl font-bold text-gray-900 mb-2">Finish your tutor profile</h2>
+                        <p className="text-gray-500 text-sm mb-6">Your tutor dashboard unlocks once your application is complete.</p>
+                        <button onClick={() => router.push('/onboarding/tutor')} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold">
+                            Continue Onboarding
+                        </button>
+                    </div>
+                </div>
+                <Footer />
+            </div>
+        );
+    }
+
+    const statCards = [
+        { label: 'Pending Requests', value: stats.pendingCount, icon: Clock, color: 'text-orange-500 bg-orange-50' },
+        { label: 'Upcoming Sessions', value: stats.upcomingCount, icon: Calendar, color: 'text-blue-500 bg-blue-50' },
+        { label: 'Completed', value: stats.completedCount, icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
+        { label: 'Earnings (paid)', value: naira(stats.earningsTotal), icon: Wallet, color: 'text-purple-500 bg-purple-50' },
+        { label: 'Rating', value: `${Number(tutor.rating || 0).toFixed(1)} ★`, icon: Star, color: 'text-yellow-500 bg-yellow-50' },
+    ];
+
+    const BookingCard = ({ b, actions }: { b: Booking; actions?: 'request' }) => (
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            b.status === 'pending' ? 'bg-orange-50 text-orange-600' :
+                            b.status === 'accepted' ? 'bg-green-50 text-green-600' :
+                            b.status === 'completed' ? 'bg-blue-50 text-blue-600' :
+                            'bg-gray-100 text-gray-500'
+                        }`}>{b.status}</span>
+                        {b.payment_status === 'paid' && <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700">paid</span>}
+                    </div>
+                    <p className="font-bold text-gray-900">{b.subject}</p>
+                    <p className="text-sm text-gray-500">
+                        {actions === 'request' ? `From ${b.student?.name || 'a student'}` : `With ${b.tutor?.name || 'tutor'}`}
+                        {' • '}{fmtDate(b.scheduled_at)} at {fmtTime(b.scheduled_at)} ({b.duration_minutes} min)
+                    </p>
+                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
+                        {b.location_type === 'home'
+                            ? <><MapPin className="w-3.5 h-3.5" /> {b.location_address || 'Home lesson'}</>
+                            : <><Video className="w-3.5 h-3.5" /> Online</>}
+                    </p>
+                    {b.notes && <p className="text-sm text-gray-600 mt-2 bg-gray-50 rounded-lg p-2.5">"{b.notes}"</p>}
+                </div>
+                <p className="font-bold text-gray-900">{b.amount != null ? naira(Number(b.amount)) : '—'}</p>
+            </div>
+            {b.status === 'accepted' && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    <button
+                        onClick={() => startClass(b)}
+                        disabled={startingClass === b.id}
+                        className="w-full bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                    >
+                        {startingClass === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Radio className="w-4 h-4" />}
+                        Start Class
+                    </button>
+                    <p className="text-[11px] text-gray-400 mt-1.5 text-center">Opens your live lesson room — the student and parents see it instantly.</p>
+                </div>
+            )}
+            {actions === 'request' && (
+                <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
+                    <button
+                        onClick={() => bookingAction(b, 'accept')}
+                        disabled={actingOn === b.id}
+                        className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                    >
+                        {actingOn === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Accept
+                    </button>
+                    <button
+                        onClick={() => bookingAction(b, 'decline')}
+                        disabled={actingOn === b.id}
+                        className="flex-1 bg-white hover:bg-gray-50 disabled:opacity-50 text-gray-700 border border-gray-300 font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                    >
+                        <X className="w-4 h-4" /> Decline
+                    </button>
+                </div>
+            )}
+        </div>
+    );
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="bg-white shadow-sm border-b">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-                    <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-outfit font-bold text-[#0A2540]">
-                            SabiLearn Tutor Dashboard
-                        </h1>
-                        <SignOutButton />
-                    </div>
-                </div>
-            </header>
-
-            {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Welcome Section */}
-                <div className="bg-gradient-to-r from-[#FF6B35] to-[#FF6B35]/80 rounded-2xl p-8 mb-8 text-white">
-                    <h2 className="text-3xl font-outfit font-bold mb-2">
-                        Welcome back, {tutor.name}! 👋
-                    </h2>
-                    <p className="text-white/90 font-inter">
-                        Ready to inspire students today?
-                    </p>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <div className="text-sm font-inter text-gray-600 mb-1">Rating</div>
-                        <div className="text-3xl font-outfit font-bold text-[#0A2540]">
-                            {tutor.rating || '0.0'} ⭐
+        <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+            <Header />
+            <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
+                {/* Profile header */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
+                    {tutor.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={tutor.avatar_url} alt={tutor.name} className="w-16 h-16 rounded-2xl object-cover" />
+                    ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-green-500 text-white flex items-center justify-center text-2xl font-bold">
+                            {tutor.name?.charAt(0).toUpperCase()}
                         </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                        <h1 className="text-2xl font-bold text-gray-900">{tutor.name}</h1>
+                        <p className="text-sm text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                            <span className={tutor.is_verified ? 'text-green-600 font-medium' : 'text-orange-500 font-medium'}>
+                                {tutor.is_verified ? '✓ Verified tutor' : '⏳ Verification in progress'}
+                            </span>
+                            {tutor.location && <span><MapPin className="w-3.5 h-3.5 inline" /> {tutor.location}</span>}
+                            {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Rate not set</span>}
+                        </p>
                     </div>
-
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <div className="text-sm font-inter text-gray-600 mb-1">Total Reviews</div>
-                        <div className="text-3xl font-outfit font-bold text-[#0A2540]">
-                            {tutor.total_reviews || 0}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <div className="text-sm font-inter text-gray-600 mb-1">Hourly Rate</div>
-                        <div className="text-3xl font-outfit font-bold text-[#FF6B35]">
-                            {tutor.hourly_rate ? `₦${tutor.hourly_rate.toLocaleString()}` : 'Not set'}
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <div className="text-sm font-inter text-gray-600 mb-1">Status</div>
-                        <div className="text-xl font-outfit font-bold text-green-600">
-                            {tutor.is_verified ? '✓ Verified' : 'Pending'}
-                        </div>
-                    </div>
+                    <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-green-700 font-semibold hover:underline">
+                        View public profile →
+                    </button>
                 </div>
 
-                {/* Profile Overview */}
-                <div className="grid md:grid-cols-2 gap-6">
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <h3 className="text-xl font-outfit font-bold text-[#0A2540] mb-4">
-                            Your Profile
-                        </h3>
-                        <div className="space-y-3">
-                            <div>
-                                <div className="text-sm font-inter text-gray-600">Email</div>
-                                <div className="font-inter text-gray-900">{tutor.email || 'Not provided'}</div>
+                {/* Admin requests */}
+                {adminRequests.length > 0 && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 mb-6">
+                        <div className="flex items-start gap-3">
+                            <Megaphone className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-sm font-semibold text-orange-800 mb-1">
+                                    The SabiLearn team {adminRequests.length > 1 ? 'has requests' : 'has a request'} for you:
+                                </p>
+                                {adminRequests.map((r) => (
+                                    <p key={r.id} className="text-sm text-orange-700">
+                                        {r.type === 'document_request' ? '📄 Document needed: ' : '❓ Info needed: '}{r.message}
+                                    </p>
+                                ))}
+                                <button
+                                    onClick={() => setShowAdminChat(true)}
+                                    className="mt-2 text-sm font-semibold text-orange-800 hover:underline"
+                                >
+                                    Reply to the team →
+                                </button>
                             </div>
-                            <div>
-                                <div className="text-sm font-inter text-gray-600">Phone</div>
-                                <div className="font-inter text-gray-900">{tutor.phone || 'Not provided'}</div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                    {statCards.map(({ label, value, icon: Icon, color }) => (
+                        <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${color}`}>
+                                <Icon className="w-5 h-5" />
                             </div>
-                            <div>
-                                <div className="text-sm font-inter text-gray-600">Location</div>
-                                <div className="font-inter text-gray-900">{tutor.location || 'Not provided'}</div>
-                            </div>
-                            <div>
-                                <div className="text-sm font-inter text-gray-600">Experience</div>
-                                <div className="font-inter text-gray-900 capitalize">
-                                    {tutor.experience_level || 'Not specified'}
+                            <p className="text-xl font-bold text-gray-900">{value}</p>
+                            <p className="text-xs text-gray-500">{label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Tabs */}
+                <div className="flex gap-2 mb-6 flex-wrap">
+                    {([
+                        ['overview', 'Overview'],
+                        ['requests', `Booking Requests${stats.pendingCount ? ` (${stats.pendingCount})` : ''}`],
+                        ['sessions', 'Sessions'],
+                        ['availability', 'Availability'],
+                        ['messages', `Messages${stats.unreadMessages ? ` (${stats.unreadMessages})` : ''}`],
+                    ] as const).map(([key, label]) => (
+                        <button
+                            key={key}
+                            onClick={() => setTab(key)}
+                            className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
+                                tab === key ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Overview */}
+                {tab === 'overview' && (
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                New requests <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </h2>
+                            {incoming.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">
+                                    No pending requests right now.
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {incoming.slice(0, 3).map((b) => <BookingCard key={b.id} b={b} actions="request" />)}
+                                </div>
+                            )}
+                        </div>
+                        <div>
+                            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                Next sessions <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </h2>
+                            {upcoming.length === 0 ? (
+                                <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">
+                                    No upcoming sessions yet.
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {upcoming.slice(0, 3).map((b) => <BookingCard key={b.id} b={b} />)}
+                                </div>
+                            )}
                         </div>
                     </div>
+                )}
 
-                    <div className="bg-white rounded-xl p-6 shadow-sm border">
-                        <h3 className="text-xl font-outfit font-bold text-[#0A2540] mb-4">
-                            Teaching Details
-                        </h3>
-                        <div className="space-y-3">
-                            <div>
-                                <div className="text-sm font-inter text-gray-600 mb-2">Subjects</div>
-                                <div className="flex flex-wrap gap-2">
-                                    {(tutor.subjects as string[])?.length > 0 ? (
-                                        (tutor.subjects as string[]).map((subject) => (
-                                            <span
-                                                key={subject}
-                                                className="px-3 py-1 bg-[#FF6B35]/10 text-[#FF6B35] rounded-full text-sm font-inter"
-                                            >
-                                                {subject}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-gray-500 font-inter text-sm">No subjects specified</span>
+                {/* Requests */}
+                {tab === 'requests' && (
+                    <div className="space-y-4">
+                        {incoming.length === 0
+                            ? <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center text-gray-400">No pending booking requests.</div>
+                            : incoming.map((b) => <BookingCard key={b.id} b={b} actions="request" />)}
+                    </div>
+                )}
+
+                {/* Sessions */}
+                {tab === 'sessions' && (
+                    <div className="space-y-6">
+                        <button
+                            onClick={openInstantPicker}
+                            className="w-full bg-gray-900 hover:bg-black text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <Zap className="w-5 h-5 text-yellow-400" />
+                            Start an Instant Class — pick a student and go live right now
+                        </button>
+                        <div>
+                            <h2 className="font-bold text-gray-900 mb-3">Upcoming</h2>
+                            {upcoming.length === 0
+                                ? <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center text-gray-400 text-sm">Nothing scheduled yet.</div>
+                                : <div className="space-y-4">{upcoming.map((b) => <BookingCard key={b.id} b={b} />)}</div>}
+                        </div>
+                        <div>
+                            <h2 className="font-bold text-gray-900 mb-3">History</h2>
+                            {past.length === 0
+                                ? <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center text-gray-400 text-sm">No past sessions yet.</div>
+                                : <div className="space-y-4">{past.map((b) => <BookingCard key={b.id} b={b} />)}</div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* Messages */}
+                {tab === 'messages' && (
+                    <div className="space-y-3">
+                        {conversations.length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center text-gray-400 text-sm">
+                                No conversations yet. Parents and students can message you from your profile.
+                            </div>
+                        ) : conversations.map((c) => (
+                            <button
+                                key={c.id}
+                                onClick={() => setActiveChat({ id: c.id, name: c.otherName, avatar: c.otherAvatar })}
+                                className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3 text-left hover:border-green-300 transition-colors"
+                            >
+                                {c.otherAvatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={c.otherAvatar} alt={c.otherName} className="w-11 h-11 rounded-full object-cover" />
+                                ) : (
+                                    <div className="w-11 h-11 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm">
+                                        {c.otherName.charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-gray-900 text-sm">{c.otherName}</p>
+                                    <p className="text-xs text-gray-500 truncate">{c.lastMessage || 'No messages yet'}</p>
+                                </div>
+                                <div className="text-right">
+                                    {c.unread > 0 && (
+                                        <span className="bg-green-600 text-white text-xs font-bold rounded-full px-2 py-0.5">{c.unread}</span>
                                     )}
+                                    <p className="text-[10px] text-gray-400 mt-1">
+                                        {c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}
+                                    </p>
                                 </div>
-                            </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {/* Availability */}
+                {tab === 'availability' && (
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                             <div>
-                                <div className="text-sm font-inter text-gray-600 mb-2">Grade Levels</div>
-                                <div className="flex flex-wrap gap-2">
-                                    {(tutor.grade_levels as string[])?.length > 0 ? (
-                                        (tutor.grade_levels as string[]).map((level) => (
-                                            <span
-                                                key={level}
-                                                className="px-3 py-1 bg-[#0A2540]/10 text-[#0A2540] rounded-full text-sm font-inter"
-                                            >
-                                                {level}
-                                            </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-gray-500 font-inter text-sm">No grade levels specified</span>
-                                    )}
-                                </div>
+                                <h2 className="font-bold text-gray-900">Your weekly availability</h2>
+                                <p className="text-sm text-gray-500">Parents see your free hours before booking. Add one or more time ranges per day.</p>
                             </div>
+                            <button
+                                onClick={saveAvailability}
+                                disabled={!availabilityDirty || savingAvailability}
+                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                            >
+                                {savingAvailability ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {DAYS.map(({ key, label }) => {
+                                const ranges = availability[key] || [];
+                                return (
+                                    <div key={key} className="flex flex-wrap items-center gap-3 border border-gray-100 rounded-xl p-3">
+                                        <label className="flex items-center gap-2 w-36">
+                                            <input
+                                                type="checkbox"
+                                                checked={ranges.length > 0}
+                                                onChange={(e) => {
+                                                    setAvailability((prev) => ({ ...prev, [key]: e.target.checked ? [{ from: '16:00', to: '19:00' }] : [] }));
+                                                    setAvailabilityDirty(true);
+                                                }}
+                                                className="w-4 h-4 accent-green-600"
+                                            />
+                                            <span className="text-sm font-medium text-gray-700">{label}</span>
+                                        </label>
+                                        <div className="flex-1 flex flex-wrap items-center gap-2">
+                                            {ranges.length === 0 && <span className="text-sm text-gray-400">Not available</span>}
+                                            {ranges.map((r, i) => (
+                                                <div key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1">
+                                                    <input
+                                                        type="time"
+                                                        value={r.from}
+                                                        onChange={(e) => {
+                                                            const next = [...ranges];
+                                                            next[i] = { ...next[i], from: e.target.value };
+                                                            setAvailability((prev) => ({ ...prev, [key]: next }));
+                                                            setAvailabilityDirty(true);
+                                                        }}
+                                                        className="text-sm bg-transparent outline-none w-[86px]"
+                                                    />
+                                                    <span className="text-gray-400 text-sm">–</span>
+                                                    <input
+                                                        type="time"
+                                                        value={r.to}
+                                                        onChange={(e) => {
+                                                            const next = [...ranges];
+                                                            next[i] = { ...next[i], to: e.target.value };
+                                                            setAvailability((prev) => ({ ...prev, [key]: next }));
+                                                            setAvailabilityDirty(true);
+                                                        }}
+                                                        className="text-sm bg-transparent outline-none w-[86px]"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            setAvailability((prev) => ({ ...prev, [key]: ranges.filter((_, j) => j !== i) }));
+                                                            setAvailabilityDirty(true);
+                                                        }}
+                                                        className="text-red-400 hover:text-red-600 p-1"
+                                                        aria-label="Remove range"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {ranges.length > 0 && (
+                                                <button
+                                                    onClick={() => {
+                                                        setAvailability((prev) => ({ ...prev, [key]: [...ranges, { from: '16:00', to: '19:00' }] }));
+                                                        setAvailabilityDirty(true);
+                                                    }}
+                                                    className="text-green-600 hover:text-green-700 p-1 flex items-center gap-1 text-sm font-medium"
+                                                >
+                                                    <Plus className="w-4 h-4" /> Add range
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
+                )}
+            {activeChat && (
+                <ChatPopup
+                    isOpen
+                    onClose={() => {
+                        setActiveChat(null);
+                        loadDashboard();
+                    }}
+                    conversationId={activeChat.id}
+                    tutorName={activeChat.name}
+                    tutorAvatar={activeChat.avatar}
+                />
+            )}
+            {showAdminChat && (
+                <ChatPopup
+                    isOpen
+                    onClose={() => setShowAdminChat(false)}
+                    withAdmin
+                    tutorName="SabiLearn Team"
+                />
+            )}
+            {instantOpen && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setInstantOpen(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-gray-900">Start an instant class</h3>
+                            <button onClick={() => setInstantOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <p className="text-sm text-gray-500 mb-4">Pick a student — they'll see the class is live and can join immediately.</p>
+                        {instantLoading ? (
+                            <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-green-600" /></div>
+                        ) : instantStudents.length === 0 ? (
+                            <div className="py-8 text-center text-gray-400 text-sm">No students yet — students you've booked with appear here.</div>
+                        ) : (
+                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                                {instantStudents.map((st) => (
+                                    <button
+                                        key={st.id}
+                                        onClick={() => startInstantClass(st.id)}
+                                        disabled={startingClass === st.id}
+                                        className="w-full bg-gray-50 hover:bg-green-50 border border-gray-200 rounded-xl p-3 flex items-center gap-3 text-left transition-colors disabled:opacity-60"
+                                    >
+                                        {st.avatar_url ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={st.avatar_url} alt={st.name} className="w-10 h-10 rounded-full object-cover" />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm">
+                                                {st.name?.charAt(0).toUpperCase()}
+                                            </div>
+                                        )}
+                                        <span className="flex-1 font-semibold text-gray-900 text-sm">{st.name}</span>
+                                        {startingClass === st.id && <Loader2 className="w-4 h-4 animate-spin text-green-600" />}
+                                        <Radio className="w-4 h-4 text-green-600" />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-                {/* Bio Section */}
-                <div className="mt-6 bg-white rounded-xl p-6 shadow-sm border">
-                    <h3 className="text-xl font-outfit font-bold text-[#0A2540] mb-4">
-                        About You
-                    </h3>
-                    <p className="font-inter text-gray-700 leading-relaxed">
-                        {tutor.bio || 'No bio provided yet.'}
-                    </p>
-                </div>
-
-                {/* Booking Requests */}
-                <div className="mt-8">
-                    <h3 className="text-xl font-outfit font-bold text-[#0A2540] mb-4">
-                        Booking Requests
-                    </h3>
-                    <BookingsList view="tutor" />
-                </div>
-
-                {/* Earnings teaser */}
-                <div className="mt-8 bg-gradient-to-r from-[#0A2540] to-[#0A2540]/90 rounded-2xl p-8 text-white text-center">
-                    <h3 className="text-2xl font-outfit font-bold mb-2">Earnings Tracking Coming Soon!</h3>
-                    <p className="font-inter text-white/80">
-                        Payouts and earnings analytics will be available soon.
-                    </p>
-                </div>
+            )}
             </main>
+            <Footer />
         </div>
     );
 }

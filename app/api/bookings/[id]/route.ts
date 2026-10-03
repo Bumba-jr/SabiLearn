@@ -58,11 +58,29 @@ export async function PATCH(
         const isTutor = tutorAuthId === user.id;
         const isStudent = studentUserId === user.id;
 
+        // Parents may cancel bookings made for their children
+        let isParentOfChild = false;
+        if (!isStudent && action === 'cancel') {
+            const { data: childRow } = await supabaseAdmin
+                .from('students')
+                .select('parent_id')
+                .eq('id', booking.student_id)
+                .maybeSingle();
+            if (childRow?.parent_id) {
+                const { data: parentProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('auth_user_id')
+                    .eq('id', childRow.parent_id)
+                    .maybeSingle();
+                isParentOfChild = parentProfile?.auth_user_id === user.id;
+            }
+        }
+
         if (['accept', 'decline', 'complete'].includes(action) && !isTutor) {
             return NextResponse.json({ error: 'Only the tutor can do this' }, { status: 403 });
         }
-        if (action === 'cancel' && !isStudent) {
-            return NextResponse.json({ error: 'Only the student who booked can cancel' }, { status: 403 });
+        if (action === 'cancel' && !isStudent && !isParentOfChild) {
+            return NextResponse.json({ error: 'Only the student or their parent can cancel' }, { status: 403 });
         }
 
         if (!ALLOWED_TRANSITIONS[action].includes(booking.status)) {

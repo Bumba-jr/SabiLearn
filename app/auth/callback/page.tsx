@@ -10,12 +10,24 @@ export default function AuthCallbackPage() {
     useEffect(() => {
         const handleCallback = async () => {
             try {
+                // Surface OAuth errors (e.g. identity-linking conflicts) instead
+                // of silently bouncing back to sign-in.
+                const hash = window.location.hash.substring(1);
+                const hashParams = new URLSearchParams(hash);
+                const oauthError = hashParams.get('error_description') || hashParams.get('error');
+                if (oauthError) {
+                    sessionStorage.setItem('oauthError', oauthError);
+                    window.location.replace('/sign-in');
+                    return;
+                }
+
                 // Get the session from the URL hash
                 const { data: { session }, error } = await supabase.auth.getSession();
 
                 if (error) {
                     console.error('Auth callback error:', error);
-                    router.push('/sign-in');
+                    sessionStorage.setItem('oauthError', error.message);
+                    window.location.replace('/sign-in');
                     return;
                 }
 

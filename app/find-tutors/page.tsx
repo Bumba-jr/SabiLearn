@@ -8,6 +8,7 @@ import { Search, MapPin, Star, Check, Shield, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { SignInModal } from '@/components/SignInModal';
+import { prefetchTutor } from '@/lib/tutor-cache';
 
 // Tutor type definition
 interface Tutor {
@@ -165,6 +166,9 @@ export default function FindTutorsPage() {
 
                 if (response.ok) {
                     setTutors(data.tutors || []);
+                    // Warm tutor profiles in the background so clicking
+                    // View Profile / Book Now renders instantly.
+                    (data.tutors || []).forEach((t: { id: string }) => prefetchTutor(t.id));
                 } else {
                     setFetchError(data.error || 'Failed to load tutors');
                     setTutors([]);

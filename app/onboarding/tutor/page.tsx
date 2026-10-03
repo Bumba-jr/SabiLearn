@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { DraftFileInput } from '@/components/onboarding/DraftFileInput';
 import { ProfilePhotoInput } from '@/components/onboarding/ProfilePhotoInput';
 import { SearchableSelect } from '@/components/SearchableSelect';
+import { FixedSelect } from '@/components/FixedSelect';
 import { DatePicker } from '@/components/DatePicker';
 import { supabase } from '@/lib/supabase/client';
 
@@ -331,61 +332,8 @@ interface CustomSelectProps {
     searchable?: boolean;
 }
 
-function CustomSelect({ value, onChange, options, placeholder = 'Select...', disabled = false, searchable = false }: CustomSelectProps) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const filteredOptions = searchable ? options.filter(option => option.label.toLowerCase().includes(searchQuery.toLowerCase())) : options;
-    const selectedOption = options.find(opt => opt.value === value);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-                setSearchQuery('');
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    return (
-        <div ref={dropdownRef} className="relative">
-            <button type="button" onClick={() => !disabled && setIsOpen(!isOpen)} disabled={disabled} className={`w-full px-4 py-3 rounded-lg border text-left font-inter transition-all flex items-center justify-between ${disabled ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-white border-gray-300 text-gray-900 hover:border-[#FF6B35] focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 cursor-pointer'} ${isOpen ? 'border-[#FF6B35] ring-2 ring-[#FF6B35]/20' : ''}`}>
-                <span className={`flex items-center gap-3 ${selectedOption ? 'text-gray-900' : 'text-gray-400'}`}>
-                    {selectedOption?.logo && (
-                        <img src={selectedOption.logo} alt={selectedOption.label} className="w-6 h-6 object-contain rounded" />
-                    )}
-                    {selectedOption ? selectedOption.label : placeholder}
-                </span>
-                <ChevronDown className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''} ${disabled ? 'text-gray-300' : 'text-gray-400'}`} />
-            </button>
-            {isOpen && !disabled && (
-                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl max-h-64 overflow-hidden">
-                    {searchable && (
-                        <div className="p-2 border-b border-gray-200">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm font-inter focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none" onClick={(e) => e.stopPropagation()} />
-                            </div>
-                        </div>
-                    )}
-                    <div className="overflow-y-auto max-h-56 py-2">
-                        {filteredOptions.length > 0 ? filteredOptions.map((option, index) => (
-                            <button key={option.value} type="button" onClick={() => { onChange(option.value); setIsOpen(false); setSearchQuery(''); }} className={`w-full px-4 py-2.5 text-left font-inter transition-colors flex items-center gap-3 ${option.value === value ? 'bg-[#FF6B35]/10 text-[#FF6B35] font-medium' : 'text-gray-700 hover:bg-gray-50'} ${index === filteredOptions.length - 1 ? 'mb-4' : ''}`}>
-                                {option.logo && (
-                                    <img src={option.logo} alt={option.label} className="w-6 h-6 object-contain rounded flex-shrink-0" />
-                                )}
-                                <span className="flex-1">{option.label}</span>
-                                {option.value === value && <Check className="w-4 h-4 text-[#FF6B35] flex-shrink-0" />}
-                            </button>
-                        )) : <div className="px-4 py-3 text-sm text-gray-500 text-center font-inter">No results found</div>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+function CustomSelect(props: CustomSelectProps) {
+    return <FixedSelect {...props} />;
 }
 
 export default function TutorOnboardingPage() {
@@ -460,6 +408,9 @@ export default function TutorOnboardingPage() {
     });
     const [isLoadingDrafts, setIsLoadingDrafts] = useState(true);
     const [draftError, setDraftError] = useState<string | null>(null);
+    const [serverSaveState, setServerSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [missingItems, setMissingItems] = useState<Array<{ label: string; step: number; focusId?: string }>>([]);
+    const serverLoadedRef = useRef(false);
 
     // Profile photo preview URL (for HEIC conversion)
     const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
@@ -561,6 +512,29 @@ export default function TutorOnboardingPage() {
         if (savedAgreedToTerms) {
             setAgreedToTerms(savedAgreedToTerms === 'true');
         }
+
+        // Server progress wins only if it was saved more recently than localStorage
+        async function loadServerProgress() {
+            try {
+                const res = await fetch('/api/onboarding/progress');
+                if (!res.ok) return;
+                const { progress } = await res.json();
+                if (!progress?.form_data) return;
+
+                const localSavedAt = localStorage.getItem('tutorOnboardingSavedAt') || '';
+                if (progress.last_saved_at && progress.last_saved_at > localSavedAt) {
+                    const { step: serverStep, ...serverFields } = progress.form_data;
+                    setFormData((prev: typeof formData) => ({ ...prev, ...serverFields }));
+                    if (typeof serverStep === 'number') setStep(serverStep);
+                    if (serverFields.phoneVerified) setFormData((prev: typeof formData) => ({ ...prev, phoneVerified: true }));
+                }
+            } catch {
+                // Offline or not signed in — localStorage copy still applies
+            } finally {
+                serverLoadedRef.current = true;
+            }
+        }
+        loadServerProgress();
     }, []);
 
     // Save data to localStorage whenever formData or step changes
@@ -593,7 +567,51 @@ export default function TutorOnboardingPage() {
         localStorage.setItem('tutorOnboardingData', JSON.stringify(dataToSave));
         localStorage.setItem('tutorOnboardingStep', step.toString());
         localStorage.setItem('tutorOnboardingAgreedToTerms', agreedToTerms.toString());
+        localStorage.setItem('tutorOnboardingSavedAt', new Date().toISOString());
     }, [formData, step, agreedToTerms]);
+
+    // Auto-save progress to Supabase (debounced) so the user never starts over
+    useEffect(() => {
+        if (!user || !serverLoadedRef.current) return;
+        if (!formData.firstName && !formData.lastName && !formData.bio) return; // nothing worth saving yet
+        setServerSaveState('saving');
+        const timer = setTimeout(async () => {
+            try {
+                const dataToSave = {
+                    firstName: formData.firstName,
+                    lastName: formData.lastName,
+                    displayName: formData.displayName,
+                    gender: formData.gender,
+                    dateOfBirth: formData.dateOfBirth,
+                    state: formData.state,
+                    lga: formData.lga,
+                    bio: formData.bio,
+                    subjects: formData.subjects,
+                    experiences: formData.experiences,
+                    gradeLevels: formData.gradeLevels,
+                    examTypes: formData.examTypes,
+                    phone: formData.phone,
+                    phoneVerified: formData.phoneVerified,
+                    location: formData.location,
+                    bankName: formData.bankName,
+                    accountNumber: formData.accountNumber,
+                    accountName: formData.accountName,
+                    hourlyRate: formData.hourlyRate,
+                    step,
+                };
+                const res = await fetch('/api/onboarding/progress', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ formData: dataToSave, step }),
+                });
+                const data = await res.json().catch(() => ({}));
+                setServerSaveState(data.saved ? 'saved' : 'error');
+            } catch {
+                setServerSaveState('error');
+            }
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [formData, step, agreedToTerms, user]);
 
     // Handle HEIC conversion for profile photo preview
     useEffect(() => {
@@ -858,8 +876,29 @@ export default function TutorOnboardingPage() {
         }
     };
 
-    const handleExperienceChange = (index: number, field: string, value: string) => {
+    const handleExperienceChange = (index: number, field: string, value: string | boolean) => {
         setFormData((prev) => ({ ...prev, experiences: prev.experiences.map((exp, i) => i === index ? { ...exp, [field]: value } : exp) }));
+    };
+
+    // Scrolls the missing field into view and focuses it (used by the
+    // step-2 validation checklist links).
+    const goToMissingItem = (item: { label: string; step: number; focusId?: string }) => {
+        setStep(item.step);
+        setMissingItems([]);
+        setError(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Wait for the step's fields to render before focusing
+        setTimeout(() => {
+            if (item.focusId) focusField(item.focusId);
+        }, 300);
+    };
+
+    const focusField = (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const focusable = el.matches('input, textarea, select, button') ? el : el.querySelector('input, textarea, select, button');
+        (focusable as HTMLElement | null)?.focus({ preventScroll: true });
     };
 
     const handleSendVerificationCode = async () => {
@@ -1023,56 +1062,62 @@ export default function TutorOnboardingPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user) {
+            toast.error('Your session ended. Please sign in again to submit your application.', { duration: 8000 });
+            router.push('/sign-in');
+            return;
+        }
 
-        // Comprehensive validation check
-        const missingFields: string[] = [];
+        // Comprehensive validation check — each item links to its field
+        const items: Array<{ label: string; step: number; focusId?: string }> = [];
 
         // Step 1 validation
-        if (!formData.firstName) missingFields.push('First Name');
-        if (!formData.lastName) missingFields.push('Last Name');
-        if (!formData.displayName) missingFields.push('Display Name');
-        if (!formData.gender) missingFields.push('Gender');
-        if (!formData.dateOfBirth) missingFields.push('Date of Birth');
-        if (!formData.state) missingFields.push('State');
-        if (!formData.lga) missingFields.push('LGA');
+        if (!formData.firstName) items.push({ label: 'First Name', step: 1, focusId: 'field-firstName' });
+        if (!formData.lastName) items.push({ label: 'Last Name', step: 1, focusId: 'field-lastName' });
+        if (!formData.displayName) items.push({ label: 'Display Name', step: 1, focusId: 'field-displayName' });
+        if (!formData.gender) items.push({ label: 'Gender', step: 1, focusId: 'field-gender' });
+        if (!formData.dateOfBirth) items.push({ label: 'Date of Birth', step: 1, focusId: 'field-dateOfBirth' });
+        if (!formData.state) items.push({ label: 'State of Residence', step: 1, focusId: 'field-state' });
+        if (!formData.lga) items.push({ label: 'LGA', step: 1, focusId: 'field-lga' });
 
         // Step 2 validation
-        if (formData.subjects.length === 0) missingFields.push('At least one Subject');
+        if (formData.subjects.length === 0) items.push({ label: 'At least one Subject', step: 2, focusId: 'section-subjects' });
         if (!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description)) {
-            missingFields.push('Complete all Experience fields');
+            items.push({ label: 'Complete all Experience fields', step: 2, focusId: 'section-experiences' });
         }
         if (formData.gradeLevels.length === 0 && formData.examTypes.length === 0) {
-            missingFields.push('At least one Grade Level or Exam Type');
+            items.push({ label: 'At least one Grade Level or Exam Type', step: 2, focusId: 'section-gradelevels' });
         }
-        if (formData.bio.length < 200) missingFields.push('Bio (minimum 200 characters)');
+        if (formData.bio.length < 200) items.push({ label: 'Bio (minimum 200 characters)', step: 2, focusId: 'bio-input' });
 
         // Step 3 validation
-        if (!formData.phone) missingFields.push('Phone Number');
+        if (!formData.phone) items.push({ label: 'Phone Number', step: 3, focusId: 'field-phone' });
 
-        // Step 4 validation
-        if (!formData.degreeCertificate) missingFields.push('Degree Certificate');
-        if (!formData.governmentId) missingFields.push('Government ID');
+        // Step 4 validation — a restored draft counts as uploaded
+        if (!formData.degreeCertificate && !draftMetadata.degree_certificate) items.push({ label: 'Degree Certificate', step: 4, focusId: 'field-degreeCertificate' });
+        if (!formData.governmentId && !draftMetadata.government_id) items.push({ label: 'Government ID', step: 4, focusId: 'field-governmentId' });
 
         // Step 5 validation
-        if (!formData.profilePhoto) missingFields.push('Profile Photo');
+        if (!formData.profilePhoto && !draftMetadata.profile_photo) items.push({ label: 'Profile Photo', step: 5, focusId: 'field-profilePhoto' });
 
         // Step 6 validation
-        if (!formData.bankName) missingFields.push('Bank Name');
-        if (!formData.accountNumber) missingFields.push('Account Number');
-        if (!formData.accountName) missingFields.push('Account Name');
+        if (!formData.bankName) items.push({ label: 'Bank Name', step: 6, focusId: 'field-bankName' });
+        if (!formData.accountNumber) items.push({ label: 'Account Number', step: 6, focusId: 'field-accountNumber' });
+        if (!formData.accountName) items.push({ label: 'Account Name (re-enter account number to resolve it)', step: 6, focusId: 'field-accountNumber' });
 
         // Step 7 validation
-        if (!agreedToTerms) missingFields.push('Agreement to Terms of Service');
+        if (!agreedToTerms) items.push({ label: 'Agreement to Terms of Service', step: 7, focusId: 'field-terms' });
 
-        if (missingFields.length > 0) {
-            setError(`Missing required fields:\n• ${missingFields.join('\n• ')}`);
+        if (items.length > 0) {
+            setMissingItems(items);
+            setError(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
         }
 
         setIsSubmitting(true);
         setError(null);
+        setMissingItems([]);
         try {
             // Get profile photo URL from draft metadata
             let profilePhotoUrl = null;
@@ -1127,23 +1172,34 @@ export default function TutorOnboardingPage() {
                 nyscCertificateUrl = publicUrlData.publicUrl;
             }
 
-            const response = await fetch('/api/onboarding/tutor', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    authUserId: user.id,
-                    name: `${formData.firstName} ${formData.lastName}`,
-                    email: user.email,
-                    ...formData,
-                    profilePhotoUrl, // Add the profile photo URL
-                    introVideoUrl, // Add the intro video URL
-                    degreeCertificateUrl, // Add degree certificate URL
-                    governmentIdUrl, // Add government ID URL
-                    nyscCertificateUrl, // Add NYSC certificate URL
-                }),
+            const submitPayload = JSON.stringify({
+                authUserId: user.id,
+                name: `${formData.firstName} ${formData.lastName}`,
+                email: user.email,
+                ...formData,
+                profilePhotoUrl, // Add the profile photo URL
+                introVideoUrl, // Add the intro video URL
+                degreeCertificateUrl, // Add degree certificate URL
+                governmentIdUrl, // Add government ID URL
+                nyscCertificateUrl, // Add NYSC certificate URL
             });
-            if (!response.ok) {
-                const data = await response.json();
+
+            // One automatic retry for transient network failures (flaky connections)
+            let response: Response | null = null;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    response = await fetch('/api/onboarding/tutor', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: submitPayload,
+                    });
+                } catch {
+                    if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
+                    throw new Error('Could not reach the server. Check your connection and submit again.');
+                }
+            }
+            if (!response!.ok) {
+                const data = await response!.json().catch(() => ({}));
                 throw new Error(data.error || 'Failed to complete onboarding');
             }
 
@@ -1186,8 +1242,8 @@ export default function TutorOnboardingPage() {
         (formData.gradeLevels.length > 0 || formData.examTypes.length > 0) &&
         formData.bio.length >= 200;
     const isStep3Valid = formData.phone;
-    const isStep4Valid = formData.degreeCertificate && formData.governmentId;
-    const isStep5Valid = formData.profilePhoto;
+    const isStep4Valid = !!(formData.degreeCertificate || draftMetadata.degree_certificate) && !!(formData.governmentId || draftMetadata.government_id);
+    const isStep5Valid = !!formData.profilePhoto || !!draftMetadata.profile_photo;
     const isStep6Valid = formData.bankName && formData.accountNumber && formData.accountName;
     const isStep7Valid = agreedToTerms;
 
@@ -1312,6 +1368,41 @@ export default function TutorOnboardingPage() {
         { number: 7, title: 'Platform Rules', subtitle: 'Terms & Conduct', icon: '📋' },
         { number: 8, title: 'Review Application', subtitle: 'Final check', icon: '✓' },
     ];
+
+
+    if (isSubmitted) {
+        return (
+            <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+                <div className="max-w-4xl mx-auto w-full px-4 pt-6">
+                    <a href="/" className="text-sm text-gray-500 hover:text-gray-800">← Back to SabiLearn</a>
+                </div>
+                <main className="flex-1 flex items-center justify-center px-4">
+                    <div className="bg-white rounded-2xl shadow-lg p-10 text-center max-w-md w-full">
+                        <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+                            <Check className="w-12 h-12 text-green-600" />
+                        </div>
+                        <h2 className="text-3xl font-outfit font-bold text-gray-900 mb-4">Application Submitted!</h2>
+                        <p className="text-gray-600 font-inter mb-2">
+                            Thank you, {formData.firstName}. Our team will review your credentials within <span className="font-semibold text-gray-900">24-48 hours</span>.
+                        </p>
+                        <div className="max-w-md mx-auto mt-8 p-6 bg-white border border-gray-200 rounded-lg">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-inter font-semibold text-gray-700">Status</span>
+                                <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-inter font-semibold rounded-full">PENDING REVIEW</span>
+                            </div>
+                            <p className="text-sm text-gray-600 font-inter">We'll notify you via email once approved.</p>
+                        </div>
+                        <button
+                            onClick={() => router.push('/dashboard/tutor')}
+                            className="mt-8 px-8 py-3 rounded-lg bg-gray-900 text-white font-inter font-semibold hover:bg-gray-800 transition-all"
+                        >
+                            Go to Dashboard
+                        </button>
+                    </div>
+                </main>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -1521,6 +1612,7 @@ export default function TutorOnboardingPage() {
                                                 <div>
                                                     <label className="block text-gray-700 font-inter font-medium mb-2">First Name</label>
                                                     <input
+                                                        id="field-firstName"
                                                         type="text"
                                                         value={formData.firstName}
                                                         onChange={(e) => {
@@ -1539,6 +1631,7 @@ export default function TutorOnboardingPage() {
                                                 <div>
                                                     <label className="block text-gray-700 font-inter font-medium mb-2">Last Name</label>
                                                     <input
+                                                        id="field-lastName"
                                                         type="text"
                                                         value={formData.lastName}
                                                         onChange={(e) => {
@@ -1557,12 +1650,12 @@ export default function TutorOnboardingPage() {
                                             </div>
                                             <div className="animate-field">
                                                 <label className="block text-gray-700 font-inter font-medium mb-2">Display Name (Public)</label>
-                                                <input type="text" value={formData.displayName} onChange={(e) => setFormData({ ...formData, displayName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Mr. Chukwudi" required />
+                                                <input id="field-displayName" type="text" value={formData.displayName} onChange={(e) => setFormData({ ...formData, displayName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter" placeholder="e.g. Mr. Chukwudi" required />
                                                 <p className="text-sm text-gray-500 mt-1 font-inter">This is what parents and students will see.</p>
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
+                                                    <label id="field-gender" className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
                                                     <SearchableSelect
                                                         value={formData.gender}
                                                         onChange={(value) => setFormData({ ...formData, gender: value })}
@@ -1573,7 +1666,7 @@ export default function TutorOnboardingPage() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
+                                                    <label id="field-dateOfBirth" className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
                                                     <DatePicker
                                                         value={formData.dateOfBirth}
                                                         onChange={(value) => setFormData({ ...formData, dateOfBirth: value })}
@@ -1585,7 +1678,7 @@ export default function TutorOnboardingPage() {
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
+                                                    <label id="field-state" className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
                                                     <SearchableSelect
                                                         value={formData.state}
                                                         onChange={(value) => setFormData({ ...formData, state: value, lga: '' })}
@@ -1595,7 +1688,7 @@ export default function TutorOnboardingPage() {
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
+                                                    <label id="field-lga" className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
                                                     <SearchableSelect
                                                         value={formData.lga}
                                                         onChange={(value) => setFormData({ ...formData, lga: value })}
@@ -1623,7 +1716,7 @@ export default function TutorOnboardingPage() {
                                                 <p className="text-gray-600 font-inter text-sm">Share your teaching expertise and experience.</p>
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Subjects You Teach (select at least one)</label>
+                                                <label id="section-subjects" className="block text-gray-700 font-inter font-medium mb-3">Subjects You Teach (select at least one)</label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                     {SUBJECTS.map((subject) => (
                                                         <button key={subject} type="button" onClick={() => handleSubjectToggle(subject)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.subjects.includes(subject) ? 'bg-[#FF6B35] text-white border-[#FF6B35]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#FF6B35]'}`}>{subject}</button>
@@ -1654,7 +1747,7 @@ export default function TutorOnboardingPage() {
                                                 )}
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Teaching Experience</label>
+                                                <label id="section-experiences" className="block text-gray-700 font-inter font-medium mb-3">Teaching Experience</label>
                                                 {formData.experiences.map((experience, index) => (
                                                     <div key={index} className="mb-6 p-6 border-2 border-gray-200 rounded-lg relative">
                                                         {formData.experiences.length > 1 && (
@@ -1666,25 +1759,26 @@ export default function TutorOnboardingPage() {
                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                                 <div>
                                                                     <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Post/Position</label>
-                                                                    <input type="text" value={experience.post} onChange={(e) => handleExperienceChange(index, 'post', e.target.value)} placeholder="e.g. Mathematics Tutor" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                    <input type="text" value={experience.post} id={`exp-${index}-post`} onChange={(e) => handleExperienceChange(index, 'post', e.target.value)} placeholder="e.g. Mathematics Tutor" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute/Organization</label>
-                                                                    <input type="text" value={experience.institute} onChange={(e) => handleExperienceChange(index, 'institute', e.target.value)} placeholder="e.g. Private Tutoring" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                    <input type="text" value={experience.institute} id={`exp-${index}-institute`} onChange={(e) => handleExperienceChange(index, 'institute', e.target.value)} placeholder="e.g. Private Tutoring" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
                                                                 </div>
                                                             </div>
                                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                                 <div>
                                                                     <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute State</label>
-                                                                    <CustomSelect value={experience.instituteState} onChange={(value) => handleExperienceChange(index, 'instituteState', value)} options={stateOptions} placeholder="Select State" searchable />
+                                                                    <span id={`exp-${index}-instituteState`} className="block"><CustomSelect value={experience.instituteState} onChange={(value) => handleExperienceChange(index, 'instituteState', value)} options={stateOptions} placeholder="Select State" searchable /></span>
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">From Year</label>
-                                                                    <input type="number" value={experience.fromYear} onChange={(e) => handleExperienceChange(index, 'fromYear', e.target.value)} placeholder="2017" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
+                                                                    <input type="number" value={experience.fromYear} id={`exp-${index}-fromYear`} onChange={(e) => handleExperienceChange(index, 'fromYear', e.target.value)} placeholder="2017" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all font-inter text-sm" required />
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">To Year</label>
                                                                     <input
+                                                                        id={`exp-${index}-toYear`}
                                                                         type={experience.currentlyWorking ? "text" : "number"}
                                                                         value={experience.currentlyWorking ? "Present" : experience.toYear}
                                                                         onChange={(e) => handleExperienceChange(index, 'toYear', e.target.value)}
@@ -1719,7 +1813,7 @@ export default function TutorOnboardingPage() {
                                                             </div>
                                                             <div>
                                                                 <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Description</label>
-                                                                <textarea value={experience.description} onChange={(e) => handleExperienceChange(index, 'description', e.target.value)} rows={3} placeholder="e.g. Provided one-on-one tutoring for JAMB and WAEC candidates with 90% success rate." className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter text-sm" required />
+                                                                <textarea value={experience.description} id={`exp-${index}-description`} onChange={(e) => handleExperienceChange(index, 'description', e.target.value)} rows={3} placeholder="e.g. Provided one-on-one tutoring for JAMB and WAEC candidates with 90% success rate." className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter text-sm" required />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1729,7 +1823,7 @@ export default function TutorOnboardingPage() {
                                                 </button>
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Grade Levels (select at least one)</label>
+                                                <label id="section-gradelevels" className="block text-gray-700 font-inter font-medium mb-3">Grade Levels (select at least one)</label>
                                                 <div className="mb-4">
                                                     <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Primary</p>
                                                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
@@ -1765,7 +1859,7 @@ export default function TutorOnboardingPage() {
                                             </div>
                                             <div>
                                                 <label className="block text-gray-700 font-inter font-medium mb-2">Bio (minimum 200 characters)</label>
-                                                <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter" placeholder="Tell students about yourself, your teaching experience, and what makes you a great tutor..." required />
+                                                <textarea value={formData.bio} id="bio-input" onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#FF6B35] focus:ring-2 focus:ring-[#FF6B35]/20 outline-none transition-all resize-none font-inter" placeholder="Tell students about yourself, your teaching experience, and what makes you a great tutor..." required />
                                                 <p className={`text-sm mt-2 font-inter ${formData.bio.length < 200 ? 'text-red-500' : 'text-gray-500'}`}>
                                                     {formData.bio.length}/760 characters {formData.bio.length < 200 && `(${200 - formData.bio.length} more needed)`}
                                                 </p>
@@ -1776,10 +1870,51 @@ export default function TutorOnboardingPage() {
                                                 <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                                                     <p className="text-sm font-inter font-semibold text-yellow-800 mb-2">Please complete the following:</p>
                                                     <ul className="text-sm text-yellow-700 space-y-1 font-inter">
-                                                        {formData.subjects.length === 0 && <li>• Select at least one subject</li>}
-                                                        {!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) && <li>• Fill all experience fields</li>}
-                                                        {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && <li>• Select at least one grade level or exam type</li>}
-                                                        {formData.bio.length < 200 && <li>• Bio must be at least 200 characters (currently {formData.bio.length})</li>}
+                                                        {formData.subjects.length === 0 && (
+                                                            <li>•{' '}
+                                                                <button type="button" onClick={() => focusField('section-subjects')} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                    Select at least one subject
+                                                                </button>
+                                                            </li>
+                                                        )}
+                                                        {formData.experiences.map((exp, i) => {
+                                                            const missing = [
+                                                                !exp.post && { label: 'role/position', id: `exp-${i}-post` },
+                                                                !exp.institute && { label: 'institute', id: `exp-${i}-institute` },
+                                                                !exp.instituteState && { label: 'state', id: `exp-${i}-instituteState` },
+                                                                !exp.fromYear && { label: 'start year', id: `exp-${i}-fromYear` },
+                                                                !exp.toYear && { label: 'end year', id: `exp-${i}-toYear` },
+                                                                !exp.description && { label: 'description', id: `exp-${i}-description` },
+                                                            ].filter((m): m is { label: string; id: string } => Boolean(m));
+                                                            if (missing.length === 0) return null;
+    return (
+                                                                <li key={i}>
+                                                                    • Experience #{i + 1}:{' '}
+                                                                    {missing.map((m, j) => (
+                                                                        <span key={m.id}>
+                                                                            <button type="button" onClick={() => focusField(m.id)} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                                {m.label}
+                                                                            </button>
+                                                                            {j < missing.length - 1 ? ', ' : ''}
+                                                                        </span>
+                                                                    ))}
+                                                                </li>
+                                                            );
+                                                        })}
+                                                        {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && (
+                                                            <li>•{' '}
+                                                                <button type="button" onClick={() => focusField('section-gradelevels')} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                    Select at least one grade level or exam type
+                                                                </button>
+                                                            </li>
+                                                        )}
+                                                        {formData.bio.length < 200 && (
+                                                            <li>•{' '}
+                                                                <button type="button" onClick={() => focusField('bio-input')} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                    Bio must be at least 200 characters (currently {formData.bio.length})
+                                                                </button>
+                                                            </li>
+                                                        )}
                                                     </ul>
                                                 </div>
                                             )}
@@ -1806,7 +1941,7 @@ export default function TutorOnboardingPage() {
                                             </div>
 
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
+                                                <label id="field-phone" className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
                                                 <div className="flex gap-3">
                                                     <input
                                                         type="tel"
@@ -1890,6 +2025,7 @@ export default function TutorOnboardingPage() {
                                             </div>
 
                                             {/* Degree Certificate */}
+                                            <div id="field-degreeCertificate">
                                             <DraftFileInput
                                                 fileType="degree_certificate"
                                                 accept=".pdf,.jpg,.jpeg,.png"
@@ -1902,8 +2038,10 @@ export default function TutorOnboardingPage() {
                                                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'degree_certificate')}
                                                 authUserId={user?.id || ''}
                                             />
+                                            </div>
 
                                             {/* Government ID */}
+                                            <div id="field-governmentId">
                                             <DraftFileInput
                                                 fileType="government_id"
                                                 accept=".pdf,.jpg,.jpeg,.png"
@@ -1916,6 +2054,7 @@ export default function TutorOnboardingPage() {
                                                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'government_id')}
                                                 authUserId={user?.id || ''}
                                             />
+                                            </div>
 
                                             {/* NYSC Certificate (Optional) */}
                                             <DraftFileInput
@@ -1940,6 +2079,7 @@ export default function TutorOnboardingPage() {
                                             </div>
 
                                             {/* Profile Photo */}
+                                            <div id="field-profilePhoto">
                                             <ProfilePhotoInput
                                                 value={formData.profilePhoto}
                                                 draftMetadata={draftMetadata.profile_photo}
@@ -1947,6 +2087,7 @@ export default function TutorOnboardingPage() {
                                                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'profile_photo')}
                                                 authUserId={user?.id || ''}
                                             />
+                                            </div>
 
                                             {/* Intro Video */}
                                             <div>
@@ -2118,7 +2259,7 @@ export default function TutorOnboardingPage() {
                                             </div>
 
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-semibold mb-2">Bank Name</label>
+                                                <label id="field-bankName" className="block text-gray-700 font-inter font-semibold mb-2">Bank Name</label>
                                                 <CustomSelect
                                                     value={formData.bankName}
                                                     onChange={(value) => setFormData({ ...formData, bankName: value })}
@@ -2131,6 +2272,7 @@ export default function TutorOnboardingPage() {
                                             <div>
                                                 <label className="block text-gray-700 font-inter font-semibold mb-2">Account Number</label>
                                                 <input
+                                                    id="field-accountNumber"
                                                     type="text"
                                                     value={formData.accountNumber}
                                                     onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
@@ -2198,6 +2340,7 @@ export default function TutorOnboardingPage() {
                                             <div className="mt-8 p-4 bg-gray-50 border-2 border-gray-200 rounded-lg">
                                                 <label className="flex items-start gap-3 cursor-pointer">
                                                     <input
+                                                        id="field-terms"
                                                         type="checkbox"
                                                         checked={agreedToTerms}
                                                         onChange={(e) => setAgreedToTerms(e.target.checked)}
@@ -2451,35 +2594,6 @@ export default function TutorOnboardingPage() {
                                     )}
 
                                     {/* Success Screen */}
-                                    {isSubmitted && (
-                                        <div className="text-center py-12">
-                                            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-                                                <Check className="w-12 h-12 text-green-600" />
-                                            </div>
-                                            <h2 className="text-3xl md:text-4xl font-outfit font-bold text-gray-900 mb-4">Application Submitted!</h2>
-                                            <p className="text-gray-600 font-inter mb-2">
-                                                Thank you, {formData.firstName}. Our team will review your credentials within <span className="font-semibold text-gray-900">24-48 hours</span>.
-                                            </p>
-
-                                            <div className="max-w-md mx-auto mt-8 p-6 bg-white border border-gray-200 rounded-lg">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <span className="text-sm font-inter font-semibold text-gray-700">Status</span>
-                                                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-inter font-semibold rounded-full">PENDING REVIEW</span>
-                                                </div>
-                                                <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                                                    <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '50%' }}></div>
-                                                </div>
-                                                <p className="text-sm text-gray-600 font-inter">We'll notify you via email once approved.</p>
-                                            </div>
-
-                                            <button
-                                                onClick={() => router.push('/dashboard/tutor')}
-                                                className="mt-8 px-8 py-3 rounded-lg bg-gray-900 text-white font-inter font-semibold hover:bg-gray-800 transition-all"
-                                            >
-                                                Go to Dashboard
-                                            </button>
-                                        </div>
-                                    )}
 
                                     {/* Video Modal */}
                                     {showVideoModal && formData.introVideo && (
@@ -2510,7 +2624,7 @@ export default function TutorOnboardingPage() {
                                             </div>
                                         </div>
                                     )}
-                                    {error && (
+                                    {(missingItems.length > 0 || error) && (
                                         <div className="mt-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
                                             <div className="flex items-start gap-3">
                                                 <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2518,7 +2632,25 @@ export default function TutorOnboardingPage() {
                                                 </svg>
                                                 <div className="flex-1">
                                                     <p className="text-red-800 font-inter font-semibold mb-1">Please complete the following:</p>
-                                                    <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
+                                                    {missingItems.length > 0 ? (
+                                                        <ul className="text-red-700 font-inter text-sm space-y-1">
+                                                            {missingItems.map((item, i) => (
+                                                                <li key={i}>
+                                                                    •{' '}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => goToMissingItem(item)}
+                                                                        className="underline decoration-red-300 underline-offset-2 hover:text-red-900 cursor-pointer text-left"
+                                                                    >
+                                                                        {item.label}
+                                                                    </button>
+                                                                    <span className="text-red-400"> (Step {item.step})</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2526,6 +2658,13 @@ export default function TutorOnboardingPage() {
                                 </form>
                                 {!isSubmitted && (
                                     <div className="flex justify-between items-center relative z-[100]">
+                                        {user && (
+                                            <span className="absolute -top-5 right-0 text-xs font-inter text-gray-500" role="status">
+                                                {serverSaveState === 'saving' && 'Saving…'}
+                                                {serverSaveState === 'saved' && '✓ Progress saved'}
+                                                {serverSaveState === 'error' && 'Saved on this device only'}
+                                            </span>
+                                        )}
                                         <button type="button" onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1 || isSubmitting} className={`px-6 py-3 rounded-lg font-inter font-medium transition-all ${step === 1 ? 'bg-white/50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-white/90 shadow-md cursor-pointer'}`}>Back</button>
                                         <div className="flex items-center gap-3">
                                             {step === 3 && !formData.phoneVerified && formData.phone && (

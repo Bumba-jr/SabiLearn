@@ -30,7 +30,7 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0, openUp: false });
     const containerRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -46,16 +46,34 @@ export function SearchableSelect({
         )
         : options;
 
-    // Update dropdown position when opened
+    // Position the dropdown with viewport-fixed coordinates so it stays glued
+    // to the field while the page scrolls, and flip upward when there is no
+    // room below (fields near the bottom of the screen).
+    const updateDropdownPosition = () => {
+        if (!buttonRef.current) return;
+        const rect = buttonRef.current.getBoundingClientRect();
+        const EST_HEIGHT = 320; // search box + options list
+        const openUp = rect.bottom + EST_HEIGHT > window.innerHeight && rect.top > EST_HEIGHT;
+        const width = Math.max(rect.width, 200);
+        const left = Math.min(rect.left, window.innerWidth - width - 8);
+        setDropdownPosition({
+            top: openUp ? rect.top - 8 : rect.bottom + 8,
+            left: Math.max(8, left),
+            width,
+            openUp,
+        });
+    };
+
     useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
-            setDropdownPosition({
-                top: rect.bottom + window.scrollY + 8,
-                left: rect.left + window.scrollX,
-                width: rect.width
-            });
-        }
+        if (!isOpen) return;
+        updateDropdownPosition();
+        // capture: true catches scrolling inside inner containers too
+        window.addEventListener('scroll', updateDropdownPosition, true);
+        window.addEventListener('resize', updateDropdownPosition);
+        return () => {
+            window.removeEventListener('scroll', updateDropdownPosition, true);
+            window.removeEventListener('resize', updateDropdownPosition);
+        };
     }, [isOpen]);
 
     // Close dropdown when clicking outside
@@ -108,8 +126,9 @@ export function SearchableSelect({
                 <div
                     ref={dropdownRef}
                     style={{
-                        position: 'absolute',
-                        top: `${dropdownPosition.top}px`,
+                        position: 'fixed',
+                        top: dropdownPosition.openUp ? undefined : `${dropdownPosition.top}px`,
+                        bottom: dropdownPosition.openUp ? `${window.innerHeight - dropdownPosition.top}px` : undefined,
                         left: `${dropdownPosition.left}px`,
                         width: `${dropdownPosition.width}px`,
                         zIndex: 9999

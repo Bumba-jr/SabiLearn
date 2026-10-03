@@ -113,37 +113,70 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'This tutor is not accepting bookings' }, { status: 400 });
         }
 
-        // Find or create the student record for this user
-        let { data: studentRow } = await supabaseAdmin
-            .from('students')
-            .select('id')
-            .eq('user_id', user.id)
-            .single();
+        // Parents book on behalf of a specific child; students book for themselves.
+        const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('id, role')
+            .eq('auth_user_id', user.id)
+            .maybeSingle();
 
-        if (!studentRow) {
-            const { data: created, error: createError } = await supabaseAdmin
+        let studentRow: { id: string } | null = null;
+        let bookedForChildName: string | null = null;
+
+        if (profile?.role === 'parent') {
+            const childId = body?.childId;
+            if (!childId) {
+                return NextResponse.json(
+                    { error: 'Choose which child this lesson is for.' },
+                    { status: 400 }
+                );
+            }
+            const { data: child, error: childError } = await supabaseAdmin
                 .from('students')
-                .insert({
-                    user_id: user.id,
-                    name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
-                    email: user.email,
-                    phone: user.user_metadata?.phone || null,
-                })
+                .select('id, name, parent_id')
+                .eq('id', childId)
+                .maybeSingle();
+
+            if (childError || !child || child.parent_id !== profile.id) {
+                return NextResponse.json({ error: 'That child is not on your account.' }, { status: 403 });
+            }
+            studentRow = { id: child.id };
+            bookedForChildName = child.name;
+        } else {
+            let { data: existing } = await supabaseAdmin
+                .from('students')
                 .select('id')
+                .eq('user_id', user.id)
                 .single();
 
-            if (createError) {
-                console.error('Error creating student record:', createError);
-                return NextResponse.json({ error: 'Failed to create student profile' }, { status: 500 });
+            if (!existing) {
+                const { data: created, error: createError } = await supabaseAdmin
+                    .from('students')
+                    .insert({
+                        user_id: user.id,
+                        name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Student',
+                        email: user.email,
+                        phone: user.user_metadata?.phone || null,
+                    })
+                    .select('id')
+                    .single();
+
+                if (createError) {
+                    console.error('Error creating student record:', createError);
+                    return NextResponse.json({ error: 'Failed to create student profile' }, { status: 500 });
+                }
+                existing = created;
             }
-            studentRow = created;
+            studentRow = existing;
         }
 
-        // Price the booking from the tutor's hourly rate
+        // Price the booking from the tutor's hourly rate. The sessions table
+        // requires a non-null amount, so tutors without a rate default to 0
+        // (payment is settled after the tutor confirms).
         const duration = Number(durationMinutes) || 60;
         const amount = tutor.hourly_rate && tutor.hourly_rate > 0
             ? Math.round((tutor.hourly_rate * duration) / 60)
-            : null;
+            : 0;
 
         const { data: booking, error: insertError } = await supabaseAdmin
             .from('sessions')
@@ -172,7 +205,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 });
         }
 
-        return NextResponse.json({ booking }, { status: 201 });
+        return NextResponse.json({ booking, bookedFor: bookedForChildName }, { status: 201 });
     } catch (error) {
         console.error('Error in bookings POST:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

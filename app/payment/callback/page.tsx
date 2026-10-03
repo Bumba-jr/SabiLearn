@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
-export default function PaymentCallbackPage() {
+function PaymentCallbackContent() {
     const searchParams = useSearchParams();
     const reference = searchParams.get('reference');
     const [state, setState] = useState<'verifying' | 'paid' | 'failed'>('verifying');
@@ -83,5 +83,17 @@ export default function PaymentCallbackPage() {
             </main>
             <Footer />
         </div>
+    );
+}
+
+export default function PaymentCallbackPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#F9F8F6' }}>
+                <Loader2 className="w-14 h-14 animate-spin text-green-600" />
+            </div>
+        }>
+            <PaymentCallbackContent />
+        </Suspense>
     );
 }

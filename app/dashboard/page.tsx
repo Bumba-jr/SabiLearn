@@ -49,7 +49,9 @@ export default function DashboardPage() {
                 if (userRole === 'tutor') {
                     console.log('Redirecting to tutor dashboard'); // Debug log
                     router.push('/dashboard/tutor');
-                } else if (userRole === 'student' || userRole === 'parent') {
+                } else if (userRole === 'parent') {
+                    router.push('/dashboard/parent');
+                } else if (userRole === 'student') {
                     console.log('Redirecting to student dashboard'); // Debug log
                     router.push('/dashboard/student');
                 } else {

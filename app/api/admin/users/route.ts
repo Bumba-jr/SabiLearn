@@ -35,6 +35,43 @@ export async function GET(request: Request) {
             .select('*')
             .order('created_at', { ascending: false });
 
+        // Real uploaded files live in tutor_onboarding_drafts. The tutors table
+        // often stores truncated folder URLs, so resolve proper file URLs here.
+        const { data: draftRows, error: draftsError } = await supabaseAdmin
+            .from('tutor_onboarding_drafts')
+            .select('clerk_user_id, auth_user_id, file_type, storage_path, original_filename, mime_type');
+
+        if (draftsError) {
+            console.error('Drafts fetch error:', draftsError.message);
+        }
+
+        const draftsByUser = new Map<string, any[]>();
+        for (const d of draftRows || []) {
+            const ownerId = d.auth_user_id || d.clerk_user_id;
+            if (!ownerId) continue;
+            if (!draftsByUser.has(ownerId)) draftsByUser.set(ownerId, []);
+            draftsByUser.get(ownerId)!.push(d);
+        }
+
+        const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const publicFileUrl = (storagePath: string) =>
+            `${SUPABASE_URL}/storage/v1/object/public/drafts/${storagePath}`;
+
+        const isFolderOnly = (url?: string | null) =>
+            !url || url.endsWith('/') || !/\/[a-z_]+\/\d{10,}_/i.test(url);
+
+        function resolveDocuments(ownerId?: string | null) {
+            const rows = (ownerId ? draftsByUser.get(ownerId) : undefined) || [];
+            const byType: Record<string, any> = {};
+            for (const d of rows) {
+                // Keep the newest upload per file type
+                if (!byType[d.file_type] || (d.storage_path > (byType[d.file_type].storage_path || ''))) {
+                    byType[d.file_type] = d;
+                }
+            }
+            return byType;
+        }
+
         console.log('Fetched data:', {
             tutors: tutors?.length || 0,
             students: students?.length || 0,
@@ -58,6 +95,11 @@ export async function GET(request: Request) {
                     processedAuthUserIds.add(tutor.auth_user_id);
                 }
 
+                const ownerId = tutor.auth_user_id || profile?.auth_user_id || tutor.clerk_user_id;
+                const docs = resolveDocuments(ownerId);
+                const docUrl = (type: string, fallback?: string | null) =>
+                    docs[type]?.storage_path ? publicFileUrl(docs[type].storage_path) : (isFolderOnly(fallback) ? null : fallback);
+
                 users.push({
                     id: tutor.id,
                     profile_id: profile?.id || tutor.user_id,
@@ -67,11 +109,18 @@ export async function GET(request: Request) {
                     name: tutor.name,
                     email: tutor.email,
                     phone: tutor.phone,
-                    avatar_url: tutor.avatar_url,
-                    intro_video_url: tutor.intro_video_url,
-                    degree_certificate_url: tutor.degree_certificate_url,
-                    government_id_url: tutor.government_id_url,
-                    nysc_certificate_url: tutor.nysc_certificate_url,
+                    avatar_url: docUrl('profile_photo', tutor.avatar_url) || tutor.avatar_url,
+                    intro_video_url: docUrl('intro_video', tutor.intro_video_url),
+                    degree_certificate_url: docUrl('degree_certificate', tutor.degree_certificate_url),
+                    government_id_url: docUrl('government_id', tutor.government_id_url),
+                    nysc_certificate_url: docUrl('nysc_certificate', tutor.nysc_certificate_url),
+                    documents: [
+                        docs['degree_certificate'] && { type: 'Degree Certificate', url: publicFileUrl(docs['degree_certificate'].storage_path), filename: docs['degree_certificate'].original_filename, mimeType: docs['degree_certificate'].mime_type },
+                        docs['government_id'] && { type: 'Government ID', url: publicFileUrl(docs['government_id'].storage_path), filename: docs['government_id'].original_filename, mimeType: docs['government_id'].mime_type },
+                        docs['nysc_certificate'] && { type: 'NYSC Certificate', url: publicFileUrl(docs['nysc_certificate'].storage_path), filename: docs['nysc_certificate'].original_filename, mimeType: docs['nysc_certificate'].mime_type },
+                        docs['intro_video'] && { type: 'Intro Video', url: publicFileUrl(docs['intro_video'].storage_path), filename: docs['intro_video'].original_filename, mimeType: docs['intro_video'].mime_type },
+                        docs['profile_photo'] && { type: 'Profile Photo', url: publicFileUrl(docs['profile_photo'].storage_path), filename: docs['profile_photo'].original_filename, mimeType: docs['profile_photo'].mime_type },
+                    ].filter(Boolean),
                     bio: tutor.bio,
                     subjects: tutor.subjects,
                     grade_levels: tutor.grade_levels,

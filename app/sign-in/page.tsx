@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
@@ -13,9 +13,29 @@ export default function SignInPage() {
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
 
+    useEffect(() => {
+        const err = sessionStorage.getItem('oauthError');
+        if (err) {
+            sessionStorage.removeItem('oauthError');
+            toast.error('Google sign-in failed: ' + err, { duration: 8000 });
+        }
+    }, []);
+
     const handleGoogleSignIn = async () => {
         setGoogleLoading(true);
         try {
+            // Already signed in with the email form? Link the Google identity
+            // to that same account instead of creating a separate user.
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                const { error } = await supabase.auth.linkIdentity({
+                    provider: 'google',
+                    options: { redirectTo: `${window.location.origin}/auth/callback` },
+                });
+                if (error) throw error;
+                return; // browser redirects to Google and back
+            }
+
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
@@ -44,8 +64,22 @@ export default function SignInPage() {
 
             if (data.user) {
                 toast.success('Signed in successfully!');
-                // Use Next.js router for client-side navigation
-                router.push('/role-selection');
+                // Route by the account's actual state — never blindly to
+                // role-selection.
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('role, onboarding_completed')
+                    .eq('auth_user_id', data.user.id)
+                    .maybeSingle();
+
+                if (profile?.onboarding_completed && profile.role) {
+                    router.push(`/dashboard/${profile.role}`);
+                } else if (profile?.role) {
+                    router.push(`/onboarding/${profile.role}`);
+                } else {
+                    router.push('/role-selection');
+                }
+                return;
             }
         } catch (error: any) {
             toast.error(error.message || 'Failed to sign in');

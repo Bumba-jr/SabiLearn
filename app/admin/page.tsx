@@ -3,20 +3,21 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth/AuthProvider';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
-    Users,
-    UserCheck,
-    UserX,
-    GraduationCap,
-    BookOpen,
-    Shield,
-    Search,
-    Filter,
-    CheckCircle,
-    XCircle,
-    Eye,
-    Trash2,
+    Users, GraduationCap, BookOpen, Shield, Search,
+    CheckCircle, XCircle, Eye, Trash2, Loader2, RefreshCw, FileText,
+    ExternalLink, X, BadgeCheck, Clock, Video as VideoIcon, Image as ImageIcon,
+    MessageCircle, Flag, Send,
 } from 'lucide-react';
+import { ChatPopup } from '@/components/ChatPopup';
+
+interface DocumentFile {
+    type: string;
+    url: string;
+    filename: string;
+    mimeType: string;
+}
 
 interface User {
     id: string;
@@ -26,6 +27,7 @@ interface User {
     role: string;
     name?: string;
     email?: string;
+    phone?: string;
     is_verified?: boolean;
     onboarding_completed: boolean;
     created_at: string;
@@ -35,9 +37,12 @@ interface User {
     degree_certificate_url?: string;
     government_id_url?: string;
     nysc_certificate_url?: string;
+    documents?: DocumentFile[];
     bio?: string;
     subjects?: string[];
+    grade_levels?: string[];
     hourly_rate?: number;
+    location?: string;
     experiences?: Array<{
         post: string;
         institute: string;
@@ -47,9 +52,6 @@ interface User {
         description: string;
     }>;
     experience_level?: string;
-    phone?: string;
-    location?: string;
-    grade_levels?: string[];
     is_available?: boolean;
     rating?: number;
     total_reviews?: number;
@@ -61,6 +63,60 @@ interface Stats {
     verifiedTutors: number;
     totalStudents: number;
     pendingVerifications: number;
+}
+
+const naira = (n: number) => `₦${Math.round(Number(n)).toLocaleString()}`;
+
+function DocPreview({ doc }: { doc: DocumentFile }) {
+    const isImage = doc.mimeType?.startsWith('image/');
+    const isHeic = /\.heic$/i.test(doc.url) || doc.mimeType === 'image/heic' || doc.mimeType === 'image/heif';
+    const isPdf = doc.mimeType === 'application/pdf';
+    const isVideo = doc.mimeType?.startsWith('video/');
+
+    return (
+        <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+            <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-100">
+                <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    {isImage ? <ImageIcon className="w-3.5 h-3.5" /> : isVideo ? <VideoIcon className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
+                    {doc.type}
+                </p>
+                <a
+                    href={doc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-green-700 hover:underline flex items-center gap-1"
+                >
+                    Open <ExternalLink className="w-3 h-3" />
+                </a>
+            </div>
+            <div className="p-2 flex items-center justify-center min-h-[160px]">
+                {isImage && isHeic ? (
+                    <div className="text-center text-sm text-gray-500 p-6">
+                        <ImageIcon className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        HEIC photo (iPhone format) — browsers can't preview it.
+                        <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-green-700 hover:underline block mt-1">Open to download</a>
+                    </div>
+                ) : isImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={doc.url} alt={doc.type} className="max-h-72 rounded-lg object-contain" />
+                ) : isPdf ? (
+                    <object data={doc.url} type="application/pdf" className="w-full h-72 rounded-lg">
+                        <div className="text-center text-sm text-gray-500 p-6">
+                            PDF preview not supported here.
+                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-green-700 hover:underline block mt-1">Open the PDF</a>
+                        </div>
+                    </object>
+                ) : isVideo ? (
+                    <video src={doc.url} controls className="max-h-72 w-full rounded-lg" />
+                ) : (
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-green-700 hover:underline flex items-center gap-1.5">
+                        <FileText className="w-4 h-4" /> Download {doc.filename}
+                    </a>
+                )}
+            </div>
+            {doc.filename && <p className="px-3 py-1.5 text-[11px] text-gray-400 truncate">{doc.filename}</p>}
+        </div>
+    );
 }
 
 export default function AdminPage() {
@@ -76,11 +132,37 @@ export default function AdminPage() {
     const [deletingUser, setDeletingUser] = useState<string | null>(null);
     const [unauthorized, setUnauthorized] = useState(false);
     const [viewingUser, setViewingUser] = useState<User | null>(null);
+    const [view, setView] = useState<'users' | 'messages' | 'reports'>('users');
+    const [conversations, setConversations] = useState<any[]>([]);
+    const [activeChat, setActiveChat] = useState<{ id: string; name: string; avatar: string | null } | null>(null);
+    const [chatWithUser, setChatWithUser] = useState<{ userId: string; name: string } | null>(null);
+    const [reports, setReports] = useState<any[]>([]);
+    const [reportFilter, setReportFilter] = useState<'open' | 'reviewing' | 'resolved'>('open');
+    const [updatingReport, setUpdatingReport] = useState<string | null>(null);
+    const [requestForm, setRequestForm] = useState<{ type: string; message: string } | null>(null);
+    const [sendingRequest, setSendingRequest] = useState(false);
 
     useEffect(() => {
         fetchStats();
         fetchUsers();
     }, [selectedRole, selectedVerified]);
+
+    useEffect(() => {
+        (async () => {
+            const [msgRes, repRes] = await Promise.all([
+                fetch('/api/messages'),
+                fetch('/api/reports'),
+            ]);
+            if (msgRes.ok) {
+                const data = await msgRes.json();
+                setConversations(data.conversations || []);
+            }
+            if (repRes.ok) {
+                const data = await repRes.json();
+                setReports(data.reports || []);
+            }
+        })();
+    }, []);
 
     const fetchStats = async () => {
         try {
@@ -119,35 +201,39 @@ export default function AdminPage() {
         }
     };
 
-    const handleVerify = async (userId: string, role: string, verified: boolean) => {
+    const handleVerify = async (u: User, verified: boolean) => {
+        const userId = u.auth_user_id || u.clerk_user_id || u.id;
         try {
             setVerifyingUser(userId);
             const response = await fetch('/api/admin/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, role, verified }),
+                body: JSON.stringify({ userId, role: u.role, verified }),
             });
 
             if (response.ok) {
+                toast.success(verified ? `${u.name || 'User'} verified — now live on Find Tutors.` : `${u.name || 'User'} unverified.`);
+                if (viewingUser?.id === u.id) setViewingUser({ ...viewingUser, is_verified: verified });
                 await fetchUsers();
                 await fetchStats();
             } else {
-                alert('Failed to update verification status');
+                const data = await response.json().catch(() => ({}));
+                toast.error(data.error || 'Failed to update verification status');
             }
         } catch (error) {
             console.error('Error verifying user:', error);
-            alert('Error updating verification status');
+            toast.error('Error updating verification status');
         } finally {
             setVerifyingUser(null);
         }
     };
 
-    const handleDelete = async (user: User) => {
-        if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    const handleDelete = async (u: User) => {
+        if (!confirm(`Permanently delete ${u.name || 'this user'}? This cannot be undone.`)) {
             return;
         }
 
-        const userId = user.auth_user_id || user.clerk_user_id || user.id;
+        const userId = u.auth_user_id || u.clerk_user_id || u.id;
 
         try {
             setDeletingUser(userId);
@@ -155,31 +241,83 @@ export default function AdminPage() {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    authUserId: user.auth_user_id,
-                    clerkUserId: user.clerk_user_id,
-                    profileId: user.profile_id || user.id,
-                    role: user.role
+                    authUserId: u.auth_user_id,
+                    clerkUserId: u.clerk_user_id,
+                    profileId: u.profile_id || u.id,
+                    role: u.role
                 }),
             });
 
             if (response.ok) {
+                toast.success('User deleted');
+                if (viewingUser?.id === u.id) setViewingUser(null);
                 await fetchUsers();
                 await fetchStats();
-                alert('User deleted successfully');
             } else {
                 const data = await response.json();
-                alert(data.error || 'Failed to delete user');
+                toast.error(data.error || 'Failed to delete user');
             }
         } catch (error) {
             console.error('Error deleting user:', error);
-            alert('Error deleting user');
+            toast.error('Error deleting user');
         } finally {
             setDeletingUser(null);
         }
     };
 
-    const handleViewUser = (user: User) => {
-        setViewingUser(user);
+    const refreshInbox = async () => {
+        const [msgRes, repRes] = await Promise.all([fetch('/api/messages'), fetch('/api/reports')]);
+        if (msgRes.ok) setConversations((await msgRes.json()).conversations || []);
+        if (repRes.ok) setReports((await repRes.json()).reports || []);
+    };
+
+    const sendAdminRequest = async () => {
+        if (!viewingUser || !requestForm?.message.trim()) return;
+        setSendingRequest(true);
+        try {
+            const res = await fetch('/api/admin/requests', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: viewingUser.auth_user_id || viewingUser.clerk_user_id,
+                    type: requestForm.type,
+                    message: requestForm.message,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not create the request.');
+                return;
+            }
+            toast.success('Request sent — the user will see it on their dashboard.');
+            setRequestForm(null);
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setSendingRequest(false);
+        }
+    };
+
+    const updateReport = async (id: string, status: string) => {
+        setUpdatingReport(id);
+        try {
+            const res = await fetch('/api/reports', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, status }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not update the report.');
+                return;
+            }
+            setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+            toast.success(`Report marked ${status}.`);
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setUpdatingReport(null);
+        }
     };
 
     const filteredUsers = users.filter((user) => {
@@ -192,522 +330,543 @@ export default function AdminPage() {
         );
     });
 
+    const roleBadge = (role: string) => {
+        const map: Record<string, string> = {
+            tutor: 'bg-blue-50 text-blue-700 border-blue-100',
+            student: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+            parent: 'bg-green-50 text-green-700 border-green-100',
+        };
+        return map[role] || 'bg-gray-100 text-gray-600 border-gray-200';
+    };
+
+    if (unauthorized) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="text-center max-w-md mx-auto p-8">
+                    <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Shield className="w-10 h-10 text-red-500" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                    <p className="text-gray-500 mb-6">You don't have permission to access the admin panel.</p>
+                    <button onClick={() => router.push('/')} className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-semibold">Back Home</button>
+                </div>
+            </div>
+        );
+    }
+
+    const statCards = stats ? [
+        { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'bg-gray-100 text-gray-600' },
+        { label: 'Tutors', value: stats.totalTutors, icon: GraduationCap, color: 'bg-blue-50 text-blue-600' },
+        { label: 'Verified Tutors', value: stats.verifiedTutors, icon: BadgeCheck, color: 'bg-green-50 text-green-600' },
+        { label: 'Students', value: stats.totalStudents, icon: BookOpen, color: 'bg-indigo-50 text-indigo-600' },
+        { label: 'Pending Review', value: stats.pendingVerifications, icon: Clock, color: 'bg-orange-50 text-orange-600' },
+    ] : [];
+
     return (
         <div className="min-h-screen bg-gray-50">
-            {unauthorized ? (
-                <div className="min-h-screen flex items-center justify-center">
-                    <div className="text-center max-w-md mx-auto p-8">
-                        <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <XCircle className="w-12 h-12 text-red-600" />
-                        </div>
-                        <h1 className="text-3xl font-bold text-gray-900 mb-4">Access Denied</h1>
-                        <p className="text-gray-600 mb-6">
-                            You don't have permission to access the admin panel. Please contact an administrator if you believe this is an error.
+            {/* Header */}
+            <div className="bg-gray-900 text-white">
+                <div className="max-w-7xl mx-auto px-4 py-5 flex flex-wrap items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center">
+                        <Shield className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h1 className="text-xl font-bold">Admin Console</h1>
+                        <p className="text-xs text-gray-400">
+                            {user?.email || 'SabiLearn'} · Manage users, verify tutors, review documents
                         </p>
-                        <p className="text-sm text-gray-500 mb-6">
-                            Your User ID: <code className="bg-gray-100 px-2 py-1 rounded">{user?.id}</code>
-                        </p>
+                    </div>
+                    <button
+                        onClick={() => { fetchUsers(); fetchStats(); }}
+                        className="flex items-center gap-2 text-sm bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg transition-colors"
+                    >
+                        <RefreshCw className="w-4 h-4" /> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <main className="max-w-7xl mx-auto px-4 py-8">
+                {/* View switcher */}
+                <div className="flex gap-2 mb-6">
+                    {([
+                        ['users', `Users${stats?.pendingVerifications ? ` (${stats.pendingVerifications} pending)` : ''}`],
+                        ['messages', 'Messages'],
+                        ['reports', 'Reports'],
+                    ] as const).map(([key, label]) => (
                         <button
-                            onClick={() => router.push('/')}
-                            className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                            key={key}
+                            onClick={() => setView(key)}
+                            className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
+                                view === key ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                            }`}
                         >
-                            Go to Home
+                            {key === 'messages' && <MessageCircle className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+                            {key === 'reports' && <Flag className="w-4 h-4 inline mr-1.5 -mt-0.5" />}
+                            {label}
                         </button>
+                    ))}
+                </div>
+
+                {view === 'messages' && (
+                    <div className="space-y-3">
+                        <p className="text-sm text-gray-500 mb-2">Every conversation on the platform. Open one to ask a tutor or user a question.</p>
+                        {conversations.length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center text-gray-400 text-sm">
+                                No conversations yet.
+                            </div>
+                        ) : conversations.map((c) => (
+                            <button
+                                key={c.id}
+                                onClick={() => setActiveChat({ id: c.id, name: c.otherName, avatar: c.otherAvatar })}
+                                className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3 text-left hover:border-green-300 transition-colors"
+                            >
+                                <div className="w-11 h-11 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                                    {c.otherName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-semibold text-gray-900 text-sm">{c.otherName}</p>
+                                        {c.category === 'support' && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700">support</span>}
+                                        {c.category === 'report' && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-600">report</span>}
+                                    </div>
+                                    <p className="text-xs text-gray-500 truncate">{c.lastMessage || 'No messages yet'}</p>
+                                </div>
+                                <p className="text-[10px] text-gray-400 shrink-0">
+                                    {c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}
+                                </p>
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {view === 'reports' && (
+                    <div className="space-y-3">
+                        <div className="flex gap-1.5 mb-2">
+                            {(['open', 'reviewing', 'resolved'] as const).map((st) => (
+                                <button
+                                    key={st}
+                                    onClick={() => setReportFilter(st)}
+                                    className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${reportFilter === st ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    {st.charAt(0).toUpperCase() + st.slice(1)}
+                                </button>
+                            ))}
+                        </div>
+                        {reports.filter((r) => r.status === reportFilter).length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center text-gray-400 text-sm">
+                                No {reportFilter} reports.
+                            </div>
+                        ) : reports.filter((r) => r.status === reportFilter).map((r) => (
+                            <div key={r.id} className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                                            <Flag className="w-4 h-4 text-red-500" /> {r.reason}
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${r.status === 'open' ? 'bg-orange-50 text-orange-600' : r.status === 'reviewing' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-700'}`}>{r.status}</span>
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            Reported tutor: <span className="font-medium text-gray-700">{r.tutor?.name || 'Unknown'}</span>
+                                            {' · by '}{r.reporterName}
+                                            {' · '}{new Date(r.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                                        </p>
+                                        {r.details && <p className="text-sm text-gray-600 mt-2 bg-gray-50 rounded-lg p-3">"{r.details}"</p>}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {r.status !== 'resolved' && r.status !== 'reviewing' && (
+                                            <button
+                                                onClick={() => updateReport(r.id, 'reviewing')}
+                                                disabled={updatingReport === r.id}
+                                                className="text-xs font-semibold px-3 py-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                                            >
+                                                Mark reviewing
+                                            </button>
+                                        )}
+                                        {r.status !== 'resolved' && (
+                                            <button
+                                                onClick={() => updateReport(r.id, 'resolved')}
+                                                disabled={updatingReport === r.id}
+                                                className="text-xs font-semibold px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+                                            >
+                                                Resolve
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {view === 'users' && (<>
+                {/* Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                    {statCards.map(({ label, value, icon: Icon, color }) => (
+                        <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${color}`}>
+                                <Icon className="w-5 h-5" />
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">{value}</p>
+                            <p className="text-xs text-gray-500">{label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Filters */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6 flex flex-wrap items-center gap-3">
+                    <div className="relative flex-1 min-w-[220px]">
+                        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search by name, email, or ID..."
+                            className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/20"
+                        />
+                    </div>
+                    <div className="flex gap-1.5 flex-wrap">
+                        {[['all', 'All'], ['tutor', 'Tutors'], ['student', 'Students'], ['parent', 'Parents']].map(([v, l]) => (
+                            <button
+                                key={v}
+                                onClick={() => setSelectedRole(v)}
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedRole === v ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                            >
+                                {l}
+                            </button>
+                        ))}
+                        <span className="w-px bg-gray-200 mx-1" />
+                        {[['all', 'Any status'], ['pending', 'Pending'], ['verified', 'Verified'], ['unverified', 'Unverified']].map(([v, l]) => (
+                            <button
+                                key={v}
+                                onClick={() => setSelectedVerified(v)}
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${selectedVerified === v ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                            >
+                                {l}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            ) : (
-                <>
-                    {/* Header */}
-                    <header className="bg-white border-b border-gray-200">
-                        <div className="max-w-7xl mx-auto px-4 py-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-                                    <p className="text-gray-600 mt-1">Manage users and verifications</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <Shield className="w-8 h-8 text-green-600" />
-                                    <div>
-                                        <p className="text-sm text-gray-600">Logged in as</p>
-                                        <p className="font-semibold text-gray-900">{user?.email}</p>
-                                    </div>
-                                </div>
-                            </div>
+
+                {/* Users table */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    {loading ? (
+                        <div className="p-16 flex items-center justify-center">
+                            <Loader2 className="w-8 h-8 animate-spin text-green-600" />
                         </div>
-                    </header>
-
-                    <div className="max-w-7xl mx-auto px-4 py-8">
-                        {/* Stats Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <Users className="w-8 h-8 text-blue-600" />
-                                </div>
-                                <p className="text-3xl font-bold text-gray-900">{stats?.totalUsers || 0}</p>
-                                <p className="text-sm text-gray-600">Total Users</p>
-                            </div>
-
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <GraduationCap className="w-8 h-8 text-orange-600" />
-                                </div>
-                                <p className="text-3xl font-bold text-gray-900">{stats?.totalTutors || 0}</p>
-                                <p className="text-sm text-gray-600">Total Tutors</p>
-                            </div>
-
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <UserCheck className="w-8 h-8 text-green-600" />
-                                </div>
-                                <p className="text-3xl font-bold text-gray-900">{stats?.verifiedTutors || 0}</p>
-                                <p className="text-sm text-gray-600">Verified Tutors</p>
-                            </div>
-
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <BookOpen className="w-8 h-8 text-purple-600" />
-                                </div>
-                                <p className="text-3xl font-bold text-gray-900">{stats?.totalStudents || 0}</p>
-                                <p className="text-sm text-gray-600">Total Students</p>
-                            </div>
-
-                            <div className="bg-white rounded-xl p-6 border border-gray-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <UserX className="w-8 h-8 text-red-600" />
-                                </div>
-                                <p className="text-3xl font-bold text-gray-900">{stats?.pendingVerifications || 0}</p>
-                                <p className="text-sm text-gray-600">Pending</p>
-                            </div>
-                        </div>
-
-                        {/* Filters */}
-                        <div className="bg-white rounded-xl p-6 border border-gray-200 mb-6">
-                            <div className="flex flex-col md:flex-row gap-4">
-                                <div className="flex-1">
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                        <input
-                                            type="text"
-                                            placeholder="Search by name, email, or ID..."
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <select
-                                        value={selectedRole}
-                                        onChange={(e) => setSelectedRole(e.target.value)}
-                                        className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    >
-                                        <option value="all">All Roles</option>
-                                        <option value="tutor">Tutors</option>
-                                        <option value="student">Students</option>
-                                        <option value="parent">Parents</option>
-                                    </select>
-
-                                    <select
-                                        value={selectedVerified}
-                                        onChange={(e) => setSelectedVerified(e.target.value)}
-                                        className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    >
-                                        <option value="all">All Status</option>
-                                        <option value="true">Verified</option>
-                                        <option value="false">Unverified</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Users Table */}
-                        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="bg-gray-50 border-b border-gray-200">
-                                        <tr>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                User
-                                            </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                Role
-                                            </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                Status
-                                            </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                Onboarding
-                                            </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                Joined
-                                            </th>
-                                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                                Actions
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        {loading ? (
-                                            <tr>
-                                                <td colSpan={6} className="px-6 py-12 text-center">
-                                                    <div className="flex items-center justify-center">
-                                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                    ) : filteredUsers.length === 0 ? (
+                        <div className="p-16 text-center text-gray-400 text-sm">No users match these filters.</div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-100 bg-gray-50">
+                                        <th className="px-5 py-3 font-semibold">User</th>
+                                        <th className="px-5 py-3 font-semibold">Role</th>
+                                        <th className="px-5 py-3 font-semibold">Status</th>
+                                        <th className="px-5 py-3 font-semibold">Documents</th>
+                                        <th className="px-5 py-3 font-semibold">Joined</th>
+                                        <th className="px-5 py-3 font-semibold text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredUsers.map((u) => {
+                                        const docCount = [u.degree_certificate_url, u.government_id_url, u.nysc_certificate_url, u.intro_video_url].filter(Boolean).length;
+                                        return (
+                                            <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                                                <td className="px-5 py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        {u.avatar_url ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img src={u.avatar_url} alt={u.name} className="w-9 h-9 rounded-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-green-500 text-white flex items-center justify-center text-xs font-bold">
+                                                                {(u.name || '?').charAt(0).toUpperCase()}
+                                                            </div>
+                                                        )}
+                                                        <div>
+                                                            <p className="font-semibold text-gray-900">{u.name || 'Unnamed'}</p>
+                                                            <p className="text-xs text-gray-400">{u.email || u.clerk_user_id}</p>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${roleBadge(u.role)}`}>{u.role}</span>
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    {u.is_verified ? (
+                                                        <span className="inline-flex items-center gap-1 text-green-600 text-xs font-semibold"><BadgeCheck className="w-4 h-4" /> Verified</span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-orange-500 text-xs font-semibold"><Clock className="w-4 h-4" /> Pending</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <span className={`text-xs font-medium ${docCount > 0 ? 'text-gray-700' : 'text-gray-300'}`}>
+                                                        {docCount} file{docCount === 1 ? '' : 's'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3 text-xs text-gray-500">
+                                                    {new Date(u.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <button
+                                                            onClick={() => setViewingUser(u)}
+                                                            title="View details & documents"
+                                                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+                                                        >
+                                                            <Eye className="w-4 h-4" />
+                                                        </button>
+                                                        {u.role === 'tutor' && (
+                                                            u.is_verified ? (
+                                                                <button
+                                                                    onClick={() => handleVerify(u, false)}
+                                                                    disabled={verifyingUser === (u.auth_user_id || u.id)}
+                                                                    title="Unverify"
+                                                                    className="p-2 rounded-lg hover:bg-orange-50 text-orange-500 transition-colors disabled:opacity-50"
+                                                                >
+                                                                    {verifyingUser === (u.auth_user_id || u.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleVerify(u, true)}
+                                                                    disabled={verifyingUser === (u.auth_user_id || u.id)}
+                                                                    title="Verify (accept)"
+                                                                    className="p-2 rounded-lg hover:bg-green-50 text-green-600 transition-colors disabled:opacity-50"
+                                                                >
+                                                                    {verifyingUser === (u.auth_user_id || u.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                                                                </button>
+                                                            )
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleDelete(u)}
+                                                            disabled={deletingUser === (u.auth_user_id || u.id)}
+                                                            title="Delete user"
+                                                            className="p-2 rounded-lg hover:bg-red-50 text-red-500 transition-colors disabled:opacity-50"
+                                                        >
+                                                            {deletingUser === (u.auth_user_id || u.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ) : filteredUsers.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                                                    No users found
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredUsers.map((user) => (
-                                                <tr key={user.auth_user_id || user.id} className="hover:bg-gray-50">
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center text-white font-semibold">
-                                                                {user.name?.[0]?.toUpperCase() || 'U'}
-                                                            </div>
-                                                            <div>
-                                                                <p className="font-semibold text-gray-900">{user.name || 'No name'}</p>
-                                                                <p className="text-sm text-gray-500">{user.email || 'No email'}</p>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${user.role === 'tutor'
-                                                            ? 'bg-orange-100 text-orange-700'
-                                                            : user.role === 'student'
-                                                                ? 'bg-blue-100 text-blue-700'
-                                                                : 'bg-purple-100 text-purple-700'
-                                                            }`}>
-                                                            {user.role}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        {user.is_verified ? (
-                                                            <span className="flex items-center gap-1 text-green-600">
-                                                                <CheckCircle className="w-4 h-4" />
-                                                                <span className="text-sm font-medium">Verified</span>
-                                                            </span>
-                                                        ) : (
-                                                            <span className="flex items-center gap-1 text-gray-500">
-                                                                <XCircle className="w-4 h-4" />
-                                                                <span className="text-sm font-medium">Unverified</span>
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        {user.onboarding_completed ? (
-                                                            <span className="text-green-600 text-sm font-medium">Complete</span>
-                                                        ) : (
-                                                            <span className="text-yellow-600 text-sm font-medium">Incomplete</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-6 py-4 text-sm text-gray-600">
-                                                        {new Date(user.created_at).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-2">
-                                                            {user.role === 'tutor' && (
-                                                                <>
-                                                                    {user.is_verified ? (
-                                                                        <button
-                                                                            onClick={() => handleVerify(user.auth_user_id || user.clerk_user_id, user.role, false)}
-                                                                            disabled={verifyingUser === (user.auth_user_id || user.clerk_user_id)}
-                                                                            className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors disabled:opacity-50"
-                                                                        >
-                                                                            Unverify
-                                                                        </button>
-                                                                    ) : (
-                                                                        <button
-                                                                            onClick={() => handleVerify(user.auth_user_id || user.clerk_user_id, user.role, true)}
-                                                                            disabled={verifyingUser === (user.auth_user_id || user.clerk_user_id)}
-                                                                            className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors disabled:opacity-50"
-                                                                        >
-                                                                            Verify
-                                                                        </button>
-                                                                    )}
-                                                                </>
-                                                            )}
-                                                            <button
-                                                                onClick={() => handleViewUser(user)}
-                                                                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                                                                title="View Details"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDelete(user)}
-                                                                disabled={deletingUser === (user.auth_user_id || user.clerk_user_id || user.id)}
-                                                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                                title="Delete user"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
-                    </div>
-                </>
-            )}
+                    )}
+                </div>
+                </>)}
+            </main>
 
-            {/* View User Modal */}
+            {/* User detail drawer */}
             {viewingUser && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-                            <h2 className="text-2xl font-bold text-gray-900">User Details</h2>
-                            <button
-                                onClick={() => setViewingUser(null)}
-                                className="text-gray-400 hover:text-gray-600 transition-colors"
-                            >
-                                <XCircle className="w-6 h-6" />
+                <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setViewingUser(null)}>
+                    <div
+                        className="bg-white w-full max-w-3xl h-full overflow-y-auto shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Drawer header */}
+                        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4 z-10">
+                            {viewingUser.avatar_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={viewingUser.avatar_url} alt={viewingUser.name} className="w-12 h-12 rounded-2xl object-cover" />
+                            ) : (
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-green-500 text-white flex items-center justify-center text-lg font-bold">
+                                    {(viewingUser.name || '?').charAt(0).toUpperCase()}
+                                </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                                <h2 className="text-lg font-bold text-gray-900 truncate">{viewingUser.name || 'Unnamed user'}</h2>
+                                <p className="text-xs text-gray-500 flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${roleBadge(viewingUser.role)}`}>{viewingUser.role}</span>
+                                    {viewingUser.is_verified
+                                        ? <span className="text-green-600 font-medium">Verified</span>
+                                        : <span className="text-orange-500 font-medium">Pending review</span>}
+                                </p>
+                            </div>
+                            <button onClick={() => setViewingUser(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
                             </button>
                         </div>
 
                         <div className="p-6 space-y-6">
-                            {/* Profile Photo */}
-                            {viewingUser.avatar_url && (
-                                <div className="flex justify-center">
-                                    <img
-                                        src={viewingUser.avatar_url}
-                                        alt={viewingUser.name}
-                                        className="w-32 h-32 rounded-full object-cover border-4 border-gray-200"
-                                    />
-                                </div>
-                            )}
-
-                            {/* Basic Info */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Name</label>
-                                    <p className="text-gray-900">{viewingUser.name || 'N/A'}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Email</label>
-                                    <p className="text-gray-900">{viewingUser.email || 'N/A'}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Role</label>
-                                    <p className="text-gray-900 capitalize">{viewingUser.role}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Status</label>
-                                    <p className="text-gray-900">
-                                        {viewingUser.is_verified ? (
-                                            <span className="text-green-600 font-semibold">Verified</span>
-                                        ) : (
-                                            <span className="text-yellow-600 font-semibold">Pending</span>
-                                        )}
-                                    </p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">User ID</label>
-                                    <p className="text-gray-900 text-xs break-all">{viewingUser.auth_user_id || viewingUser.clerk_user_id}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Created</label>
-                                    <p className="text-gray-900">{new Date(viewingUser.created_at).toLocaleDateString()}</p>
-                                </div>
+                            {/* Contact info */}
+                            <div className="grid sm:grid-cols-2 gap-3">
+                                {[
+                                    ['Email', viewingUser.email],
+                                    ['Phone', viewingUser.phone],
+                                    ['Location', viewingUser.location],
+                                    ['Hourly rate', viewingUser.hourly_rate ? naira(viewingUser.hourly_rate) : null],
+                                    ['User ID', viewingUser.auth_user_id || viewingUser.clerk_user_id],
+                                    ['Joined', new Date(viewingUser.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' })],
+                                ].filter(([, v]) => v).map(([label, value]) => (
+                                    <div key={label as string} className="bg-gray-50 rounded-xl px-4 py-3">
+                                        <p className="text-[11px] font-semibold text-gray-400 uppercase">{label as string}</p>
+                                        <p className="text-sm text-gray-900 break-all">{value as string}</p>
+                                    </div>
+                                ))}
                             </div>
 
                             {/* Bio */}
                             {viewingUser.bio && (
                                 <div>
-                                    <label className="text-sm font-semibold text-gray-600">Bio</label>
-                                    <p className="text-gray-900 mt-1">{viewingUser.bio}</p>
+                                    <h3 className="text-sm font-bold text-gray-900 mb-2">Bio</h3>
+                                    <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-xl p-4">{viewingUser.bio}</p>
                                 </div>
                             )}
 
-                            {/* Subjects */}
-                            {viewingUser.subjects && viewingUser.subjects.length > 0 && (
+                            {/* Subjects & levels */}
+                            {(viewingUser.subjects?.length || viewingUser.grade_levels?.length) ? (
                                 <div>
-                                    <label className="text-sm font-semibold text-gray-600">Subjects</label>
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        {viewingUser.subjects.map((subject, index) => (
-                                            <span
-                                                key={index}
-                                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm"
-                                            >
-                                                {subject}
-                                            </span>
+                                    <h3 className="text-sm font-bold text-gray-900 mb-2">Teaching</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        {viewingUser.subjects?.map((s) => (
+                                            <span key={s} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-100">{s}</span>
+                                        ))}
+                                        {viewingUser.grade_levels?.map((g) => (
+                                            <span key={g} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium border border-purple-100">{g}</span>
                                         ))}
                                     </div>
                                 </div>
-                            )}
+                            ) : null}
 
-                            {/* Experience Level */}
-                            {viewingUser.experience_level && (
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Experience Level</label>
-                                    <p className="text-gray-900 capitalize">{viewingUser.experience_level}</p>
-                                </div>
-                            )}
-
-                            {/* Experiences */}
+                            {/* Experience */}
                             {viewingUser.experiences && viewingUser.experiences.length > 0 && (
                                 <div>
-                                    <label className="text-sm font-semibold text-gray-600 mb-3 block">Teaching Experience</label>
-                                    <div className="space-y-4">
-                                        {viewingUser.experiences.map((exp, index) => (
-                                            <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div>
-                                                        <h4 className="font-semibold text-gray-900">{exp.post}</h4>
-                                                        <p className="text-sm text-gray-600">{exp.institute}</p>
-                                                        {exp.instituteState && (
-                                                            <p className="text-sm text-gray-500">{exp.instituteState}</p>
-                                                        )}
-                                                    </div>
-                                                    <span className="text-sm text-gray-500 whitespace-nowrap">
-                                                        {exp.fromYear} - {exp.toYear}
-                                                    </span>
-                                                </div>
-                                                {exp.description && (
-                                                    <p className="text-sm text-gray-700 mt-2">{exp.description}</p>
-                                                )}
+                                    <h3 className="text-sm font-bold text-gray-900 mb-3">Experience</h3>
+                                    <div className="space-y-3">
+                                        {viewingUser.experiences.map((exp, i) => (
+                                            <div key={i} className="border border-gray-100 rounded-xl p-4">
+                                                <p className="font-semibold text-gray-900 text-sm">{exp.post || 'Role'} — {exp.institute || 'Institute'}</p>
+                                                <p className="text-xs text-gray-400 mb-1">{exp.instituteState} · {exp.fromYear}–{exp.toYear}</p>
+                                                {exp.description && <p className="text-sm text-gray-600 mt-1">{exp.description}</p>}
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Hourly Rate */}
-                            {viewingUser.hourly_rate && (
-                                <div>
-                                    <label className="text-sm font-semibold text-gray-600">Hourly Rate</label>
-                                    <p className="text-gray-900 text-lg font-bold">₦{viewingUser.hourly_rate.toLocaleString()}</p>
-                                </div>
-                            )}
-
-                            {/* Documents and Media Section */}
-                            {viewingUser.role === 'tutor' && (
-                                <div className="border-t border-gray-200 pt-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Documents & Media</h3>
-
-                                    <div className="space-y-4">
-                                        {/* Intro Video */}
-                                        {viewingUser.intro_video_url && (
-                                            <div>
-                                                <label className="text-sm font-semibold text-gray-600 mb-2 block">Intro Video</label>
-                                                <video
-                                                    src={viewingUser.intro_video_url}
-                                                    controls
-                                                    className="w-full max-h-64 rounded-lg border border-gray-200"
-                                                >
-                                                    Your browser does not support the video tag.
-                                                </video>
-                                            </div>
-                                        )}
-
-                                        {/* Degree Certificate */}
-                                        {viewingUser.degree_certificate_url && (
-                                            <div>
-                                                <label className="text-sm font-semibold text-gray-600 mb-2 block">Degree Certificate</label>
-                                                <a
-                                                    href={viewingUser.degree_certificate_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
-                                                >
-                                                    <Eye className="w-5 h-5" />
-                                                    <span className="font-medium">View Degree Certificate</span>
-                                                </a>
-                                            </div>
-                                        )}
-
-                                        {/* Government ID */}
-                                        {viewingUser.government_id_url && (
-                                            <div>
-                                                <label className="text-sm font-semibold text-gray-600 mb-2 block">Government ID</label>
-                                                <a
-                                                    href={viewingUser.government_id_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 px-4 py-3 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
-                                                >
-                                                    <Eye className="w-5 h-5" />
-                                                    <span className="font-medium">View Government ID</span>
-                                                </a>
-                                            </div>
-                                        )}
-
-                                        {/* NYSC Certificate */}
-                                        {viewingUser.nysc_certificate_url && (
-                                            <div>
-                                                <label className="text-sm font-semibold text-gray-600 mb-2 block">NYSC Certificate</label>
-                                                <a
-                                                    href={viewingUser.nysc_certificate_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="flex items-center gap-2 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors"
-                                                >
-                                                    <Eye className="w-5 h-5" />
-                                                    <span className="font-medium">View NYSC Certificate</span>
-                                                </a>
-                                            </div>
-                                        )}
-
-                                        {/* Show message if no documents */}
-                                        {!viewingUser.intro_video_url &&
-                                            !viewingUser.degree_certificate_url &&
-                                            !viewingUser.government_id_url &&
-                                            !viewingUser.nysc_certificate_url && (
-                                                <p className="text-gray-500 text-sm italic">No documents or media uploaded</p>
-                                            )}
+                            {/* Documents — inline previews */}
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-3">Submitted documents</h3>
+                                {(viewingUser.documents && viewingUser.documents.length > 0) ? (
+                                    <div className="grid sm:grid-cols-2 gap-4">
+                                        {viewingUser.documents.map((doc) => <DocPreview key={doc.url} doc={doc} />)}
                                     </div>
+                                ) : viewingUser.degree_certificate_url || viewingUser.government_id_url || viewingUser.nysc_certificate_url || viewingUser.intro_video_url ? (
+                                    <div className="grid sm:grid-cols-2 gap-4">
+                                        {[
+                                            viewingUser.degree_certificate_url && { type: 'Degree Certificate', url: viewingUser.degree_certificate_url, filename: '', mimeType: '' },
+                                            viewingUser.government_id_url && { type: 'Government ID', url: viewingUser.government_id_url, filename: '', mimeType: '' },
+                                            viewingUser.nysc_certificate_url && { type: 'NYSC Certificate', url: viewingUser.nysc_certificate_url, filename: '', mimeType: '' },
+                                            viewingUser.intro_video_url && { type: 'Intro Video', url: viewingUser.intro_video_url, filename: '', mimeType: '' },
+                                        ].filter(Boolean).map((doc) => <DocPreview key={(doc as DocumentFile).url} doc={doc as DocumentFile} />)}
+                                    </div>
+                                ) : (
+                                    <div className="border border-dashed border-gray-300 rounded-xl p-8 text-center text-gray-400 text-sm">
+                                        No documents uploaded.
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Admin tools: chat + requests */}
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 mb-3">Admin tools</h3>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    <button
+                                        onClick={() => setChatWithUser({ userId: viewingUser.auth_user_id || viewingUser.clerk_user_id, name: viewingUser.name || 'User' })}
+                                        className="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    >
+                                        <MessageCircle className="w-4 h-4" /> Message user
+                                    </button>
+                                    <button
+                                        onClick={() => setRequestForm({ type: 'document_request', message: '' })}
+                                        className="bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-semibold text-sm px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                                    >
+                                        <FileText className="w-4 h-4" /> Request document / info
+                                    </button>
                                 </div>
-                            )}
+                                {requestForm && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                                        <div className="flex gap-2">
+                                            {['document_request', 'info_request'].map((t) => (
+                                                <button
+                                                    key={t}
+                                                    onClick={() => setRequestForm((f) => ({ ...(f || { message: '' }), type: t }))}
+                                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold ${requestForm.type === t ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
+                                                >
+                                                    {t === 'document_request' ? 'Document request' : 'More info'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <textarea
+                                            value={requestForm.message}
+                                            onChange={(e) => setRequestForm((f) => ({ ...(f || { type: 'document_request' }), message: e.target.value }))}
+                                            rows={3}
+                                            placeholder={requestForm.type === 'document_request'
+                                                ? 'e.g. Please upload a clearer photo of your government ID for verification.'
+                                                : 'e.g. Can you confirm your availability for weekend lessons?'}
+                                            className="w-full px-4 py-3 rounded-lg border border-gray-300 text-sm outline-none focus:border-green-600 resize-none"
+                                        />
+                                        <div className="flex gap-2 justify-end">
+                                            <button onClick={() => setRequestForm(null)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+                                            <button
+                                                onClick={sendAdminRequest}
+                                                disabled={!requestForm.message.trim() || sendingRequest}
+                                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-2"
+                                            >
+                                                {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send request
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Actions */}
-                            <div className="flex gap-3 pt-4 border-t border-gray-200">
-                                {viewingUser.role === 'tutor' && (
-                                    <>
-                                        {viewingUser.is_verified ? (
-                                            <button
-                                                onClick={() => {
-                                                    handleVerify(viewingUser.auth_user_id || viewingUser.clerk_user_id, viewingUser.role, false);
-                                                    setViewingUser(null);
-                                                }}
-                                                className="flex-1 px-4 py-2 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition-colors"
-                                            >
-                                                Unverify User
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => {
-                                                    handleVerify(viewingUser.auth_user_id || viewingUser.clerk_user_id, viewingUser.role, true);
-                                                    setViewingUser(null);
-                                                }}
-                                                className="flex-1 px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium hover:bg-green-200 transition-colors"
-                                            >
-                                                Verify User
-                                            </button>
-                                        )}
-                                    </>
+                            <div className="flex flex-wrap gap-3 pt-2 pb-6">
+                                {viewingUser.role === 'tutor' && !viewingUser.is_verified && (
+                                    <button
+                                        onClick={() => handleVerify(viewingUser, true)}
+                                        disabled={verifyingUser === (viewingUser.auth_user_id || viewingUser.id)}
+                                        className="flex-1 min-w-[160px] bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        {verifyingUser === (viewingUser.auth_user_id || viewingUser.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <BadgeCheck className="w-5 h-5" />}
+                                        Accept & Verify
+                                    </button>
+                                )}
+                                {viewingUser.role === 'tutor' && viewingUser.is_verified && (
+                                    <button
+                                        onClick={() => handleVerify(viewingUser, false)}
+                                        disabled={verifyingUser === (viewingUser.auth_user_id || viewingUser.id)}
+                                        className="flex-1 min-w-[160px] bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        <XCircle className="w-5 h-5" /> Unverify (remove from Find Tutors)
+                                    </button>
                                 )}
                                 <button
-                                    onClick={() => {
-                                        handleDelete(viewingUser);
-                                        setViewingUser(null);
-                                    }}
-                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                                    onClick={() => handleDelete(viewingUser)}
+                                    disabled={deletingUser === (viewingUser.auth_user_id || viewingUser.id)}
+                                    className="bg-white hover:bg-red-50 disabled:opacity-50 text-red-600 border border-red-200 font-semibold py-3 px-5 rounded-xl flex items-center justify-center gap-2 transition-colors"
                                 >
-                                    Delete User
+                                    <Trash2 className="w-4 h-4" /> Delete
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {(activeChat || chatWithUser) && (
+                <ChatPopup
+                    isOpen
+                    onClose={async () => {
+                        setActiveChat(null);
+                        setChatWithUser(null);
+                        await refreshInbox();
+                    }}
+                    conversationId={activeChat?.id}
+                    userId={chatWithUser?.userId}
+                    tutorName={activeChat?.name || chatWithUser?.name || 'Chat'}
+                    tutorAvatar={activeChat?.avatar}
+                />
             )}
         </div>
     );

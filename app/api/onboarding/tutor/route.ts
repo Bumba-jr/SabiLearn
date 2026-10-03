@@ -28,8 +28,23 @@ export async function POST(request: NextRequest) {
 
         if (profileFetchError || !profile) {
             console.error('❌ Profile fetch error:', profileFetchError);
+            // Network timeouts (e.g. flaky connection) should not be reported
+            // as a missing profile — tell the user to retry instead.
+            const msg = profileFetchError?.message || '';
+            if (!profile && !profileFetchError) {
+                return NextResponse.json(
+                    { error: 'Profile not found', details: 'No profiles row for this user' },
+                    { status: 404 }
+                );
+            }
+            if (/fetch failed|timeout|UND_ERR|network/i.test(msg)) {
+                return NextResponse.json(
+                    { error: 'Could not reach the database. Check your connection and submit again.', details: msg },
+                    { status: 503 }
+                );
+            }
             return NextResponse.json(
-                { error: 'Profile not found', details: profileFetchError?.message },
+                { error: 'Profile not found', details: msg },
                 { status: 404 }
             );
         }

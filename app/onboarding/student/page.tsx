@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth/AuthProvider';
 import { BookOpen, ChevronDown, Check, Search, Plus, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DraftFileInput } from '@/components/onboarding/DraftFileInput';
+import { FixedSelect } from '@/components/FixedSelect';
 import { ProfilePhotoInput } from '@/components/onboarding/ProfilePhotoInput';
 
 import {
@@ -328,66 +329,32 @@ interface CustomSelectProps {
     searchable?: boolean;
 }
 
-function CustomSelect({ value, onChange, options, placeholder = 'Select...', disabled = false, searchable = false }: CustomSelectProps) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const filteredOptions = searchable ? options.filter(option => option.label.toLowerCase().includes(searchQuery.toLowerCase())) : options;
-    const selectedOption = options.find(opt => opt.value === value);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-                setSearchQuery('');
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    return (
-        <div ref={dropdownRef} className={`relative ${isOpen ? 'z-[10000]' : 'z-0'}`}>
-            <button type="button" onClick={() => !disabled && setIsOpen(!isOpen)} disabled={disabled} className={`w-full px-4 py-3 rounded-lg border text-left font-inter transition-all flex items-center justify-between ${disabled ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-white border-gray-300 text-gray-900 hover:border-[#3B82F6] focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 cursor-pointer'} ${isOpen ? 'border-[#3B82F6] ring-2 ring-[#3B82F6]/20' : ''}`}>
-                <span className={`flex items-center gap-3 ${selectedOption ? 'text-gray-900' : 'text-gray-400'}`}>
-                    {selectedOption?.logo && (
-                        <img src={selectedOption.logo} alt={selectedOption.label} className="w-6 h-6 object-contain rounded" />
-                    )}
-                    {selectedOption ? selectedOption.label : placeholder}
-                </span>
-                <ChevronDown className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''} ${disabled ? 'text-gray-300' : 'text-gray-400'}`} />
-            </button>
-            {isOpen && !disabled && (
-                <div className="absolute z-[9999] w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl max-h-64 overflow-hidden">
-                    {searchable && (
-                        <div className="p-2 border-b border-gray-200">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..." className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm font-inter focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none" onClick={(e) => e.stopPropagation()} />
-                            </div>
-                        </div>
-                    )}
-                    <div className="overflow-y-auto max-h-56 py-2">
-                        {filteredOptions.length > 0 ? filteredOptions.map((option, index) => (
-                            <button key={option.value} type="button" onClick={() => { onChange(option.value); setIsOpen(false); setSearchQuery(''); }} className={`w-full px-4 py-2.5 text-left font-inter transition-colors flex items-center gap-3 ${option.value === value ? 'bg-[#3B82F6]/10 text-[#3B82F6] font-medium' : 'text-gray-700 hover:bg-gray-50'} ${index === filteredOptions.length - 1 ? 'mb-4' : ''}`}>
-                                {option.logo && (
-                                    <img src={option.logo} alt={option.label} className="w-6 h-6 object-contain rounded flex-shrink-0" />
-                                )}
-                                <span className="flex-1">{option.label}</span>
-                                {option.value === value && <Check className="w-4 h-4 text-[#3B82F6] flex-shrink-0" />}
-                            </button>
-                        )) : <div className="px-4 py-3 text-sm text-gray-500 text-center font-inter">No results found</div>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+function CustomSelect(props: CustomSelectProps) {
+    return <FixedSelect {...props} />;
 }
 
 export default function StudentOnboardingPage() {
     const router = useRouter();
     const { user } = useAuth();
+    const [serverSaveState, setServerSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const serverLoadedRef = useRef(false);
+    const [missingItems, setMissingItems] = useState<Array<{ label: string; step: number; focusId?: string }>>([]);
+
+    const focusField = (id: string) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const focusable = el.matches('input, textarea, select, button') ? el : el.querySelector('input, textarea, select, button');
+        (focusable as HTMLElement | null)?.focus({ preventScroll: true });
+    };
+
+    const goToMissingItem = (item: { label: string; step: number; focusId?: string }) => {
+        setStep(item.step);
+        setMissingItems([]);
+        setError(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setTimeout(() => { if (item.focusId) focusField(item.focusId); }, 300);
+    };
     const [step, setStep] = useState(1);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -512,6 +479,21 @@ export default function StudentOnboardingPage() {
 
     // Load saved data from localStorage on mount
     useEffect(() => {
+        // Children and completed accounts never re-onboard: the parent does
+        // everything, so send them straight to their dashboard.
+        (async () => {
+            try {
+                const res = await fetch('/api/dashboard', { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.onboardingCompleted && data.role === 'student') {
+                    router.push('/dashboard/student');
+                } else if (data.onboardingCompleted && data.role) {
+                    router.push(`/dashboard/${data.role}`);
+                }
+            } catch { /* not signed in — continue */ }
+        })();
+
         const savedData = localStorage.getItem('studentOnboardingData');
         const savedStep = localStorage.getItem('studentOnboardingStep');
         const savedAgreedToTerms = localStorage.getItem('studentOnboardingAgreedToTerms');
@@ -532,6 +514,27 @@ export default function StudentOnboardingPage() {
         if (savedAgreedToTerms) {
             setAgreedToTerms(savedAgreedToTerms === 'true');
         }
+
+        // Server progress wins only if newer than localStorage
+        async function loadServerProgress() {
+            try {
+                const res = await fetch('/api/onboarding/progress');
+                if (!res.ok) return;
+                const { progress } = await res.json();
+                if (!progress?.form_data) return;
+                const localSavedAt = localStorage.getItem('studentOnboardingSavedAt') || '';
+                if (progress.last_saved_at && progress.last_saved_at > localSavedAt) {
+                    const { step: serverStep, ...serverFields } = progress.form_data;
+                    setFormData((prev: typeof formData) => ({ ...prev, ...serverFields }));
+                    if (typeof serverStep === 'number') setStep(serverStep);
+                }
+            } catch {
+                // Offline or not signed in — localStorage still applies
+            } finally {
+                serverLoadedRef.current = true;
+            }
+        }
+        loadServerProgress();
     }, []);
 
     // Save data to localStorage whenever formData or step changes
@@ -564,7 +567,48 @@ export default function StudentOnboardingPage() {
         localStorage.setItem('studentOnboardingData', JSON.stringify(dataToSave));
         localStorage.setItem('studentOnboardingStep', step.toString());
         localStorage.setItem('studentOnboardingAgreedToTerms', agreedToTerms.toString());
+        localStorage.setItem('studentOnboardingSavedAt', new Date().toISOString());
     }, [formData, step, agreedToTerms]);
+
+    // Auto-save progress to Supabase (debounced)
+    useEffect(() => {
+        if (!user || !serverLoadedRef.current) return;
+        if (!formData.firstName && !formData.lastName && !formData.bio) return;
+        setServerSaveState('saving');
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch('/api/onboarding/progress', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        role: 'student',
+                        step,
+                        formData: {
+                            firstName: formData.firstName,
+                            lastName: formData.lastName,
+                            displayName: formData.displayName,
+                            gender: formData.gender,
+                            dateOfBirth: formData.dateOfBirth,
+                            state: formData.state,
+                            lga: formData.lga,
+                            bio: formData.bio,
+                            subjects: formData.subjects,
+                            gradeLevels: formData.gradeLevels,
+                            examTypes: formData.examTypes,
+                            phone: formData.phone,
+                            phoneVerified: formData.phoneVerified,
+                            step,
+                        },
+                    }),
+                });
+                const data = await res.json().catch(() => ({}));
+                setServerSaveState(data.saved ? 'saved' : 'error');
+            } catch {
+                setServerSaveState('error');
+            }
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [formData, step, agreedToTerms, user]);
 
     // Handle HEIC conversion for profile photo preview
     useEffect(() => {
@@ -794,8 +838,9 @@ export default function StudentOnboardingPage() {
         setFormData((prev) => ({ ...prev, subjects: prev.subjects.filter((s) => s !== subject) }));
     };
 
+    // A child is in exactly ONE grade level — selecting replaces the previous pick.
     const handleGradeLevelToggle = (level: string) => {
-        setFormData((prev) => ({ ...prev, gradeLevels: prev.gradeLevels.includes(level) ? prev.gradeLevels.filter((l) => l !== level) : [...prev.gradeLevels, level] }));
+        setFormData((prev) => ({ ...prev, gradeLevels: prev.gradeLevels.includes(level) ? [] : [level] }));
     };
 
     const handleExamTypeToggle = (examType: string) => {
@@ -977,56 +1022,49 @@ export default function StudentOnboardingPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user) {
+            toast.error('Your session ended. Please sign in again to submit your application.', { duration: 8000 });
+            router.push('/sign-in');
+            return;
+        }
 
-        // Comprehensive validation check
-        const missingFields: string[] = [];
+        // Comprehensive validation check — each item links to its field
+        const items: Array<{ label: string; step: number; focusId?: string }> = [];
 
         // Step 1 validation
-        if (!formData.firstName) missingFields.push('First Name');
-        if (!formData.lastName) missingFields.push('Last Name');
-        if (!formData.displayName) missingFields.push('Display Name');
-        if (!formData.gender) missingFields.push('Gender');
-        if (!formData.dateOfBirth) missingFields.push('Date of Birth');
-        if (!formData.state) missingFields.push('State');
-        if (!formData.lga) missingFields.push('LGA');
+        if (!formData.firstName) items.push({ label: 'First Name', step: 1, focusId: 'field-firstName' });
+        if (!formData.lastName) items.push({ label: 'Last Name', step: 1, focusId: 'field-lastName' });
+        if (!formData.displayName) items.push({ label: 'Display Name', step: 1, focusId: 'field-firstName' });
+        if (!formData.gender) items.push({ label: 'Gender', step: 1, focusId: 'field-gender' });
+        if (!formData.dateOfBirth) items.push({ label: 'Date of Birth', step: 1, focusId: 'field-dateOfBirth' });
+        if (!formData.state) items.push({ label: 'State of Residence', step: 1, focusId: 'field-state' });
+        if (!formData.lga) items.push({ label: 'LGA', step: 1, focusId: 'field-lga' });
 
         // Step 2 validation
-        if (formData.subjects.length === 0) missingFields.push('At least one Subject');
-        if (!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description)) {
-            missingFields.push('Complete all Experience fields');
-        }
+        if (formData.subjects.length === 0) items.push({ label: 'At least one Subject', step: 2, focusId: 'section-subjects' });
         if (formData.gradeLevels.length === 0 && formData.examTypes.length === 0) {
-            missingFields.push('At least one Grade Level or Exam Type');
+            items.push({ label: 'Class / Grade Level or Exam Type', step: 2, focusId: 'section-gradelevels' });
         }
-        if (formData.bio.length < 200) missingFields.push('Bio (minimum 200 characters)');
 
         // Step 3 validation
-        if (!formData.phone) missingFields.push('Phone Number');
+        if (!formData.phone) items.push({ label: 'Phone Number', step: 3, focusId: 'field-phone' });
 
-        // Step 4 validation
-        if (!formData.degreeCertificate) missingFields.push('Degree Certificate');
-        if (!formData.governmentId) missingFields.push('Government ID');
+        // Step 4 validation — a restored draft counts as uploaded
+        if (!formData.profilePhoto && !draftMetadata.profile_photo) items.push({ label: 'Profile Photo', step: 4, focusId: 'field-profilePhoto' });
 
         // Step 5 validation
-        if (!formData.profilePhoto) missingFields.push('Profile Photo');
+        if (!agreedToTerms) items.push({ label: 'Agreement to Terms of Service', step: 5, focusId: 'field-terms' });
 
-        // Step 6 validation
-        if (!formData.bankName) missingFields.push('Bank Name');
-        if (!formData.accountNumber) missingFields.push('Account Number');
-        if (!formData.accountName) missingFields.push('Account Name');
-
-        // Step 7 validation
-        if (!agreedToTerms) missingFields.push('Agreement to Terms of Service');
-
-        if (missingFields.length > 0) {
-            setError(`Missing required fields:\n• ${missingFields.join('\n• ')}`);
+        if (items.length > 0) {
+            setMissingItems(items);
+            setError(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
             return;
         }
 
         setIsSubmitting(true);
         setError(null);
+        setMissingItems([]);
         try {
             const response = await fetch('/api/onboarding/student', {
                 method: 'POST',
@@ -1034,8 +1072,8 @@ export default function StudentOnboardingPage() {
                 body: JSON.stringify({ authUserId: user.id, name: `${formData.firstName} ${formData.lastName}`, email: user.email, ...formData }),
             });
             if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Failed to complete onboarding');
+                const data = await response.json().catch(() => ({}));
+                throw new Error([data.error, data.details].filter(Boolean).join(' — ') || 'Failed to complete onboarding');
             }
 
             // Clear saved data after successful submission
@@ -1057,14 +1095,10 @@ export default function StudentOnboardingPage() {
 
     const isStep1Valid = formData.firstName && formData.lastName && formData.displayName && formData.gender && formData.dateOfBirth && formData.state && formData.lga;
     const isStep2Valid = formData.subjects.length > 0 &&
-        formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) &&
-        (formData.gradeLevels.length > 0 || formData.examTypes.length > 0) &&
-        formData.bio.length >= 200;
+        (formData.gradeLevels.length > 0 || formData.examTypes.length > 0);
     const isStep3Valid = formData.phone;
-    const isStep4Valid = formData.degreeCertificate && formData.governmentId;
-    const isStep5Valid = formData.profilePhoto;
-    const isStep6Valid = formData.bankName && formData.accountNumber && formData.accountName;
-    const isStep7Valid = agreedToTerms;
+    const isStep4Valid = !!formData.profilePhoto || !!draftMetadata.profile_photo;
+    const isStep5Valid = agreedToTerms;
 
     // Debug helper - you can check console to see what's missing
     useEffect(() => {
@@ -1165,20 +1199,45 @@ export default function StudentOnboardingPage() {
 
     const themeColor = '#3B82F6';
     const lightBg = '#FFF5F2';
-    const totalSteps = 8;
+    const totalSteps = 5;
     const progressPercentage = (step / totalSteps) * 100;
     const [isBottomRightHovered, setIsBottomRightHovered] = useState(false);
 
     const steps = [
         { number: 1, title: 'Personal Details', subtitle: 'Basic info', icon: '👤' },
-        { number: 2, title: 'Teaching Details', subtitle: 'Subjects & Experience', icon: '📚' },
+        { number: 2, title: 'Learning Details', subtitle: 'Subjects & Goals', icon: '📚' },
         { number: 3, title: 'Contact Info', subtitle: 'Phone verification', icon: '📞' },
-        { number: 4, title: 'Verification', subtitle: 'Upload documents', icon: '📄' },
-        { number: 5, title: 'Profile Media', subtitle: 'Photo & Video', icon: '📸' },
-        { number: 6, title: 'Payout Details', subtitle: 'Bank setup', icon: '💳' },
-        { number: 7, title: 'Platform Rules', subtitle: 'Terms & Conduct', icon: '📋' },
-        { number: 8, title: 'Review Application', subtitle: 'Final check', icon: '✓' },
+        { number: 4, title: 'Profile Photo', subtitle: 'A friendly face', icon: '📸' },
+        { number: 5, title: 'Review & Agree', subtitle: 'Final check', icon: '✓' },
     ];
+
+    if (isSubmitted) {
+        return (
+            <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
+                <main className="flex-1 flex items-center justify-center px-4">
+                    <div className="bg-white rounded-2xl shadow-lg p-10 text-center max-w-md w-full">
+                        <Check className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                        <h2 className="text-2xl font-outfit font-bold text-gray-900 mb-2">Application submitted! 🎉</h2>
+                        <p className="text-gray-500 font-inter text-sm mb-6">
+                            Your student account is ready. Find a tutor and start learning — your parent can follow your progress from their dashboard.
+                        </p>
+                        <button
+                            onClick={() => router.push('/find-tutors')}
+                            className="w-full bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold py-3.5 rounded-xl font-inter transition-colors"
+                        >
+                            Find a Tutor
+                        </button>
+                        <button
+                            onClick={() => router.push('/dashboard/student')}
+                            className="w-full mt-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3.5 rounded-xl font-inter transition-colors"
+                        >
+                            Go to My Dashboard
+                        </button>
+                    </div>
+                </main>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -1386,11 +1445,11 @@ export default function StudentOnboardingPage() {
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">First Name</label>
-                                                    <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter" placeholder="e.g. Chukwudi" required />
+                                                    <label id="field-firstName" className="block text-gray-700 font-inter font-medium mb-2">First Name</label>
+                                                    <input id="field-firstName-input" type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter" placeholder="e.g. Chukwudi" required />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Last Name</label>
+                                                    <label id="field-lastName" className="block text-gray-700 font-inter font-medium mb-2">Last Name</label>
                                                     <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter" placeholder="e.g. Okafor" required />
                                                 </div>
                                             </div>
@@ -1401,21 +1460,21 @@ export default function StudentOnboardingPage() {
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div className="isolate">
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
+                                                    <label id="field-gender" className="block text-gray-700 font-inter font-medium mb-2">Gender</label>
                                                     <CustomSelect value={formData.gender} onChange={(value) => setFormData({ ...formData, gender: value })} options={genderOptions} placeholder="Select Gender" />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
+                                                    <label id="field-dateOfBirth" className="block text-gray-700 font-inter font-medium mb-2">Date of Birth</label>
                                                     <input type="date" value={formData.dateOfBirth} onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter" required />
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-field">
                                                 <div className="isolate">
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
+                                                    <label id="field-state" className="block text-gray-700 font-inter font-medium mb-2">State of Residence</label>
                                                     <CustomSelect value={formData.state} onChange={(value) => setFormData({ ...formData, state: value, lga: '' })} options={stateOptions} placeholder="Select State" searchable />
                                                 </div>
                                                 <div className="isolate">
-                                                    <label className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
+                                                    <label id="field-lga" className="block text-gray-700 font-inter font-medium mb-2">LGA</label>
                                                     <CustomSelect value={formData.lga} onChange={(value) => setFormData({ ...formData, lga: value })} options={lgaOptions} placeholder="Select LGA" disabled={!formData.state} searchable />
                                                 </div>
                                             </div>
@@ -1424,11 +1483,11 @@ export default function StudentOnboardingPage() {
                                     {step === 2 && (
                                         <div className="space-y-8">
                                             <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Teaching Details</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Share your teaching expertise and experience.</p>
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Learning Details</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Tell us what you want to learn and your goals.</p>
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Subjects You Teach (select at least one)</label>
+                                                <label id="section-subjects" className="block text-gray-700 font-inter font-medium mb-3">Subjects You Want to Learn (select at least one)</label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                     {SUBJECTS.map((subject) => (
                                                         <button key={subject} type="button" onClick={() => handleSubjectToggle(subject)} className={`px-4 py-3 rounded-lg font-inter font-medium transition-all duration-200 border-2 ${formData.subjects.includes(subject) ? 'bg-[#3B82F6] text-white border-[#3B82F6]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#3B82F6]'}`}>{subject}</button>
@@ -1459,60 +1518,14 @@ export default function StudentOnboardingPage() {
                                                 )}
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Teaching Experience</label>
-                                                {formData.experiences.map((experience, index) => (
-                                                    <div key={index} className="mb-6 p-6 border-2 border-gray-200 rounded-lg relative">
-                                                        {formData.experiences.length > 1 && (
-                                                            <button type="button" onClick={() => handleRemoveExperience(index)} className="absolute top-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        )}
-                                                        <div className="space-y-4">
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                <div>
-                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Post/Position</label>
-                                                                    <input type="text" value={experience.post} onChange={(e) => handleExperienceChange(index, 'post', e.target.value)} placeholder="e.g. Mathematics Tutor" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter text-sm" required />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute/Organization</label>
-                                                                    <input type="text" value={experience.institute} onChange={(e) => handleExperienceChange(index, 'institute', e.target.value)} placeholder="e.g. Private Tutoring" className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter text-sm" required />
-                                                                </div>
-                                                            </div>
-                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                                <div>
-                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Institute State</label>
-                                                                    <CustomSelect value={experience.instituteState} onChange={(value) => handleExperienceChange(index, 'instituteState', value)} options={stateOptions} placeholder="Select State" searchable />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">From Year</label>
-                                                                    <input type="number" value={experience.fromYear} onChange={(e) => handleExperienceChange(index, 'fromYear', e.target.value)} placeholder="2017" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter text-sm" required />
-                                                                </div>
-                                                                <div>
-                                                                    <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">To Year</label>
-                                                                    <input type="number" value={experience.toYear} onChange={(e) => handleExperienceChange(index, 'toYear', e.target.value)} placeholder="2020" min="1950" max={new Date().getFullYear()} className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter text-sm" required />
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="block text-gray-700 font-inter font-medium mb-2 text-sm">Description</label>
-                                                                <textarea value={experience.description} onChange={(e) => handleExperienceChange(index, 'description', e.target.value)} rows={3} placeholder="e.g. Provided one-on-one tutoring for JAMB and WAEC candidates with 90% success rate." className="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all resize-none font-inter text-sm" required />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                <button type="button" onClick={handleAddExperience} className="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 text-gray-600 hover:border-[#3B82F6] hover:text-[#3B82F6] font-inter font-medium transition-all flex items-center justify-center gap-2">
-                                                    <Plus className="w-4 h-4" />Add Another Experience
-                                                </button>
-                                            </div>
-                                            <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-3">Grade Levels (select at least one)</label>
+                                                <label id="section-gradelevels" className="block text-gray-700 font-inter font-medium mb-3">Class / Grade Level <span className="text-gray-400 font-normal">(pick the one you're currently in)</span></label>
                                                 <div className="mb-4">
                                                     <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Primary</p>
                                                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                                                         {GRADE_LEVELS.primary.map((level) => (
-                                                            <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#3B82F6] transition-all">
-                                                                <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#3B82F6] border-gray-300 rounded focus:ring-[#3B82F6]" />
-                                                                <span className="text-sm font-inter text-gray-700">{level}</span>
-                                                            </label>
+                                                            <button key={level} type="button" onClick={() => handleGradeLevelToggle(level)} className={`px-3 py-2.5 rounded-lg border-2 font-inter text-sm font-medium transition-all ${formData.gradeLevels.includes(level) ? 'bg-[#3B82F6] text-white border-[#3B82F6]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#3B82F6]'}`}>
+                                                                {level}
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 </div>
@@ -1520,10 +1533,9 @@ export default function StudentOnboardingPage() {
                                                     <p className="text-sm font-inter font-semibold text-gray-700 mb-2">Secondary</p>
                                                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                                                         {GRADE_LEVELS.secondary.map((level) => (
-                                                            <label key={level} className="flex items-center gap-2 px-3 py-2 rounded-lg border-2 border-gray-300 cursor-pointer hover:border-[#3B82F6] transition-all">
-                                                                <input type="checkbox" checked={formData.gradeLevels.includes(level)} onChange={() => handleGradeLevelToggle(level)} className="w-4 h-4 text-[#3B82F6] border-gray-300 rounded focus:ring-[#3B82F6]" />
-                                                                <span className="text-sm font-inter text-gray-700">{level}</span>
-                                                            </label>
+                                                            <button key={level} type="button" onClick={() => handleGradeLevelToggle(level)} className={`px-3 py-2.5 rounded-lg border-2 font-inter text-sm font-medium transition-all ${formData.gradeLevels.includes(level) ? 'bg-[#3B82F6] text-white border-[#3B82F6]' : 'bg-white text-gray-700 border-gray-300 hover:border-[#3B82F6]'}`}>
+                                                                {level}
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 </div>
@@ -1539,11 +1551,9 @@ export default function StudentOnboardingPage() {
                                                 </div>
                                             </div>
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-2">Bio (minimum 200 characters)</label>
-                                                <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all resize-none font-inter" placeholder="Tell students about yourself, your teaching experience, and what makes you a great tutor..." required />
-                                                <p className={`text-sm mt-2 font-inter ${formData.bio.length < 200 ? 'text-red-500' : 'text-gray-500'}`}>
-                                                    {formData.bio.length}/760 characters {formData.bio.length < 200 && `(${200 - formData.bio.length} more needed)`}
-                                                </p>
+                                                <label id="bio-input-label" className="block text-gray-700 font-inter font-medium mb-2">About You <span className="text-gray-400 font-normal">(optional — share your learning goals)</span></label>
+                                                <textarea id="bio-input" value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={6} maxLength={760} className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all resize-none font-inter" placeholder="e.g. I want to improve my Maths ahead of JAMB and I enjoy learning with real-life examples..." required />
+                                                <p className="text-sm mt-2 font-inter text-gray-500">{formData.bio.length}/760 characters</p>
                                             </div>
 
                                             {/* Validation Helper */}
@@ -1551,10 +1561,20 @@ export default function StudentOnboardingPage() {
                                                 <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                                                     <p className="text-sm font-inter font-semibold text-yellow-800 mb-2">Please complete the following:</p>
                                                     <ul className="text-sm text-yellow-700 space-y-1 font-inter">
-                                                        {formData.subjects.length === 0 && <li>• Select at least one subject</li>}
-                                                        {!formData.experiences.every(exp => exp.post && exp.institute && exp.instituteState && exp.fromYear && exp.toYear && exp.description) && <li>• Fill all experience fields</li>}
-                                                        {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && <li>• Select at least one grade level or exam type</li>}
-                                                        {formData.bio.length < 200 && <li>• Bio must be at least 200 characters (currently {formData.bio.length})</li>}
+                                                        {formData.subjects.length === 0 && (
+                                                            <li>•{' '}
+                                                                <button type="button" onClick={() => focusField('section-subjects')} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                    Select at least one subject
+                                                                </button>
+                                                            </li>
+                                                        )}
+                                                        {formData.gradeLevels.length === 0 && formData.examTypes.length === 0 && (
+                                                            <li>•{' '}
+                                                                <button type="button" onClick={() => focusField('section-gradelevels')} className="underline decoration-yellow-400 underline-offset-2 hover:text-yellow-900 cursor-pointer">
+                                                                    Select at least one grade level or exam type
+                                                                </button>
+                                                            </li>
+                                                        )}
                                                     </ul>
                                                 </div>
                                             )}
@@ -1581,7 +1601,7 @@ export default function StudentOnboardingPage() {
                                             </div>
 
                                             <div>
-                                                <label className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
+                                                <label id="field-phone" className="block text-gray-700 font-inter font-medium mb-2">Phone Number</label>
                                                 <div className="flex gap-3">
                                                     <input
                                                         type="tel"
@@ -1660,61 +1680,11 @@ export default function StudentOnboardingPage() {
                                     {step === 4 && (
                                         <div className="space-y-6">
                                             <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Verification</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Upload documents to verify your expertise. Approved tutors earn 3x more.</p>
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Profile Photo</h2>
+                                                <p className="text-gray-600 font-inter text-sm">Add a friendly photo so tutors recognize you in class.</p>
                                             </div>
 
-                                            {/* Degree Certificate */}
-                                            <DraftFileInput
-                                                fileType="degree_certificate"
-                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                maxSize={5 * 1024 * 1024}
-                                                label="Degree Certificate"
-                                                description="Upload your university degree or teaching certificate (PDF, JPG, PNG - Max 5MB)"
-                                                value={formData.degreeCertificate}
-                                                draftMetadata={draftMetadata.degree_certificate}
-                                                onChange={(file) => setFormData({ ...formData, degreeCertificate: file })}
-                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'degree_certificate')}
-                                                authUserId={user?.id || ''}
-                                            />
-
-                                            {/* Government ID */}
-                                            <DraftFileInput
-                                                fileType="government_id"
-                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                maxSize={5 * 1024 * 1024}
-                                                label="Government ID (NIN/Passport)"
-                                                description="Upload a valid government-issued ID (NIN, Driver's License, Passport - Max 5MB)"
-                                                value={formData.governmentId}
-                                                draftMetadata={draftMetadata.government_id}
-                                                onChange={(file) => setFormData({ ...formData, governmentId: file })}
-                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'government_id')}
-                                                authUserId={user?.id || ''}
-                                            />
-
-                                            {/* NYSC Certificate (Optional) */}
-                                            <DraftFileInput
-                                                fileType="nysc_certificate"
-                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                maxSize={5 * 1024 * 1024}
-                                                label="NYSC Certificate (Optional)"
-                                                description="Upload your NYSC discharge certificate if applicable (Max 5MB)"
-                                                value={formData.nyscCertificate}
-                                                draftMetadata={draftMetadata.nysc_certificate}
-                                                onChange={(file) => setFormData({ ...formData, nyscCertificate: file })}
-                                                onDraftRestore={(metadata) => handleDraftRestore(metadata, 'nysc_certificate')}
-                                                authUserId={user?.id || ''}
-                                            />
-                                        </div>
-                                    )}
-                                    {step === 5 && (
-                                        <div className="space-y-6">
-                                            <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Profile Media</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Parents trust tutors they can see and hear.</p>
-                                            </div>
-
-                                            {/* Profile Photo */}
+                                            <div id="field-profilePhoto">
                                             <ProfilePhotoInput
                                                 value={formData.profilePhoto}
                                                 draftMetadata={draftMetadata.profile_photo}
@@ -1722,220 +1692,15 @@ export default function StudentOnboardingPage() {
                                                 onDraftRestore={(metadata) => handleDraftRestore(metadata, 'profile_photo')}
                                                 authUserId={user?.id || ''}
                                             />
-
-                                            {/* Intro Video */}
-                                            <div>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <label className="block text-gray-700 font-inter font-semibold">Intro Video (2 min)</label>
-                                                    <span className="text-xs font-inter font-semibold text-teal-600 bg-teal-50 px-3 py-1 rounded-full">Highly Recommended</span>
-                                                </div>
-
-                                                {/* Draft restoration UI for intro video */}
-                                                {draftMetadata.intro_video && !formData.introVideo && (
-                                                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-sm font-medium text-blue-900">
-                                                                    Draft found: {draftMetadata.intro_video.original_filename}
-                                                                </p>
-                                                                <p className="text-xs text-blue-700">
-                                                                    Uploaded {new Date(draftMetadata.intro_video.uploaded_at).toLocaleDateString()}
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDraftRestore(draftMetadata.intro_video!, 'intro_video')}
-                                                                className="px-3 py-1 text-sm text-white rounded transition-colors"
-                                                                style={{ backgroundColor: themeColor }}
-                                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FF8C5A'}
-                                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = themeColor}
-                                                            >
-                                                                Restore
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="p-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 text-center relative">
-                                                    {formData.introVideo ? (
-                                                        <div className="space-y-3">
-                                                            {/* Action Buttons at Top */}
-                                                            <div className="flex items-center justify-center gap-3 mb-4 relative z-20">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setShowVideoModal(true)}
-                                                                    className="px-4 py-2 rounded-lg bg-[#3B82F6] text-white font-inter font-medium hover:bg-[#3B82F6]/90 transition-all text-sm"
-                                                                >
-                                                                    Preview Video
-                                                                </button>
-                                                                <label className="cursor-pointer">
-                                                                    <input
-                                                                        type="file"
-                                                                        accept="video/*"
-                                                                        onChange={async (e) => {
-                                                                            const file = e.target.files?.[0];
-                                                                            if (file && file.size <= 100 * 1024 * 1024) {
-                                                                                setFormData({ ...formData, introVideo: file });
-                                                                                await handleIntroVideoUpload(file);
-                                                                            } else if (file) {
-                                                                                toast.error('File too large', {
-                                                                                    description: 'Video must be less than 100MB',
-                                                                                    duration: 5000,
-                                                                                });
-                                                                            }
-                                                                        }}
-                                                                        className="hidden"
-                                                                    />
-                                                                    <span className="px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#3B82F6] hover:text-[#3B82F6] transition-all inline-block text-sm">Change Video</span>
-                                                                </label>
-                                                            </div>
-                                                            {/* Video Thumbnail with Play Button */}
-                                                            <div
-                                                                className="relative w-full h-64 bg-black rounded-lg overflow-hidden cursor-pointer group border-2 border-dashed border-gray-400"
-                                                                onClick={() => setShowVideoModal(true)}
-                                                            >
-                                                                <video
-                                                                    src={URL.createObjectURL(formData.introVideo)}
-                                                                    className="w-full h-full object-cover"
-                                                                />
-                                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
-                                                                    <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                                        <svg className="w-8 h-8 text-[#3B82F6] ml-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                                                                        </svg>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <p className="text-sm text-green-600 font-inter flex items-center justify-center gap-2">
-                                                                <Check className="w-4 h-4" />
-                                                                {formData.introVideo.name}
-                                                            </p>
-                                                        </div>
-                                                    ) : isRecording ? (
-                                                        <div className="space-y-4">
-                                                            {/* Live Camera Preview - Full Width */}
-                                                            <div className="relative w-full">
-                                                                <video
-                                                                    ref={liveVideoRef}
-                                                                    autoPlay
-                                                                    muted
-                                                                    playsInline
-                                                                    className="w-full h-96 bg-black rounded-lg object-cover border-2 border-dashed border-red-400"
-                                                                />
-                                                                <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-500 text-white px-3 py-1.5 rounded-full z-10">
-                                                                    <div className="w-3 h-3 rounded-full bg-white animate-pulse"></div>
-                                                                    <span className="text-sm font-inter font-semibold">REC {recordingTime}s</span>
-                                                                </div>
-                                                            </div>
-                                                            <p className="text-sm text-gray-600 font-inter">Recording... {recordingTime}s / 120s</p>
-                                                            <button
-                                                                type="button"
-                                                                onClick={stopRecording}
-                                                                className="px-6 py-2.5 rounded-lg bg-red-500 text-white font-inter font-medium hover:bg-red-600 transition-all"
-                                                            >
-                                                                Stop Recording
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <>
-                                                            <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                            </svg>
-                                                            <h3 className="font-inter font-semibold text-gray-900 mb-2">Record a quick intro</h3>
-                                                            <p className="text-sm text-gray-500 font-inter mb-4">Introduce yourself, your subjects, and why you love teaching.</p>
-                                                            <div className="flex items-center justify-center gap-3">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={startRecording}
-                                                                    className="px-6 py-2.5 rounded-lg bg-gray-900 text-white font-inter font-medium hover:bg-gray-800 transition-all flex items-center gap-2"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                                                                    </svg>
-                                                                    Record Now
-                                                                </button>
-                                                                <label className="cursor-pointer">
-                                                                    <input
-                                                                        type="file"
-                                                                        accept="video/*"
-                                                                        onChange={async (e) => {
-                                                                            const file = e.target.files?.[0];
-                                                                            if (file && file.size <= 100 * 1024 * 1024) {
-                                                                                setFormData({ ...formData, introVideo: file });
-                                                                                await handleIntroVideoUpload(file);
-                                                                            } else if (file) {
-                                                                                toast.error('File too large', {
-                                                                                    description: 'Video must be less than 100MB',
-                                                                                    duration: 5000,
-                                                                                });
-                                                                            }
-                                                                        }}
-                                                                        className="hidden"
-                                                                    />
-                                                                    <span className="px-6 py-2.5 rounded-lg border-2 border-gray-300 text-gray-700 font-inter font-medium hover:border-[#3B82F6] hover:text-[#3B82F6] transition-all inline-block">
-                                                                        Upload File
-                                                                    </span>
-                                                                </label>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
                                             </div>
                                         </div>
                                     )}
-
-                                    {/* Step 6: Payout Details */}
-                                    {step === 6 && (
+{/* Step 7: Platform Rules */}
+                                    {step === 5 && (
                                         <div className="space-y-6">
                                             <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Payout Details</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Where should we send your earnings?</p>
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-gray-700 font-inter font-semibold mb-2">Bank Name</label>
-                                                <CustomSelect
-                                                    value={formData.bankName}
-                                                    onChange={(value) => setFormData({ ...formData, bankName: value })}
-                                                    options={NIGERIAN_BANKS}
-                                                    placeholder="Select Bank"
-                                                    searchable
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="block text-gray-700 font-inter font-semibold mb-2">Account Number</label>
-                                                <input
-                                                    type="text"
-                                                    value={formData.accountNumber}
-                                                    onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                                                    maxLength={10}
-                                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-[#3B82F6] focus:ring-2 focus:ring-[#3B82F6]/20 outline-none transition-all font-inter"
-                                                    placeholder="0123456789"
-                                                    required
-                                                />
-
-                                                {formData.firstName && formData.lastName && (
-                                                    <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-3">
-                                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border-3" style={{ backgroundColor: `${themeColor}E6`, borderColor: themeColor }}>
-                                                            <Check className="w-5 h-5 text-white" strokeWidth={3} />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-sm text-blue-800 font-inter font-semibold mb-1">Account Name</p>
-                                                            <p className="text-base text-blue-900 font-inter font-bold">{(formData.firstName + ' ' + formData.lastName).toUpperCase()}</p>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Step 7: Platform Rules */}
-                                    {step === 7 && (
-                                        <div className="space-y-6">
-                                            <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Platform Rules</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Please review our professional code of conduct.</p>
+                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Review & Agree</h2>
+                                                <p className="text-gray-600 font-inter text-sm">A few house rules before you start learning with SabiLearn.</p>
                                             </div>
 
                                             <div className="space-y-6">
@@ -1944,8 +1709,8 @@ export default function StudentOnboardingPage() {
                                                         <span className="text-gray-700 font-inter font-semibold">1</span>
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">15% Platform Fee:</h3>
-                                                        <p className="text-gray-600 font-inter text-sm">SabiLearn charges a service fee on completed lessons to maintain the platform and marketing.</p>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">Be On Time:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">Join your lessons punctually — repeated lateness or no-shows affect your account.</p>
                                                     </div>
                                                 </div>
 
@@ -1954,8 +1719,8 @@ export default function StudentOnboardingPage() {
                                                         <span className="text-gray-700 font-inter font-semibold">2</span>
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">No Off-Platform Payments:</h3>
-                                                        <p className="text-gray-600 font-inter text-sm">Accepting direct payments from parents will lead to immediate permanent ban.</p>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">Keep It On SabiLearn:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">All lessons and payments stay on SabiLearn — it keeps you and your parents safe.</p>
                                                     </div>
                                                 </div>
 
@@ -1964,8 +1729,8 @@ export default function StudentOnboardingPage() {
                                                         <span className="text-gray-700 font-inter font-semibold">3</span>
                                                     </div>
                                                     <div>
-                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">Professionalism:</h3>
-                                                        <p className="text-gray-600 font-inter text-sm">Lateness or no-shows for scheduled lessons are strictly penalized.</p>
+                                                        <h3 className="font-inter font-semibold text-gray-900 mb-1">Be Respectful:</h3>
+                                                        <p className="text-gray-600 font-inter text-sm">Treat your tutors and classmates with courtesy during every lesson.</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1973,6 +1738,7 @@ export default function StudentOnboardingPage() {
                                             <div className="mt-8 p-4 bg-gray-50 border-2 border-gray-200 rounded-lg">
                                                 <label className="flex items-start gap-3 cursor-pointer">
                                                     <input
+                                                        id="field-terms"
                                                         type="checkbox"
                                                         checked={agreedToTerms}
                                                         onChange={(e) => setAgreedToTerms(e.target.checked)}
@@ -1986,306 +1752,7 @@ export default function StudentOnboardingPage() {
                                         </div>
                                     )}
 
-                                    {/* Step 8: Review Application */}
-                                    {step === 8 && !isSubmitted && (
-                                        <div className="space-y-6">
-                                            <div className="mb-6">
-                                                <h2 className="text-2xl md:text-3xl font-outfit font-bold text-gray-900 mb-2">Review Application</h2>
-                                                <p className="text-gray-600 font-inter text-sm">Double check your details before submitting.</p>
-                                            </div>
-
-                                            {/* Personal Information Card */}
-                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Personal Information</h3>
-                                                </div>
-                                                <div className="flex items-start gap-6">
-                                                    <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-gray-300">
-                                                        {profilePhotoPreviewUrl ? (
-                                                            <img src={profilePhotoPreviewUrl} alt="Profile" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                            </svg>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Full Name</p>
-                                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.firstName} {formData.lastName}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Display Name</p>
-                                                            <p className="text-base font-inter font-semibold text-gray-900">{formData.displayName}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Gender</p>
-                                                            <p className="text-base font-inter text-gray-900">{formData.gender}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Date of Birth</p>
-                                                            <p className="text-base font-inter text-gray-900">{formData.dateOfBirth}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Location</p>
-                                                            <p className="text-base font-inter text-gray-900">{formData.lga}, {formData.state}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Phone</p>
-                                                            <p className="text-base font-inter text-gray-900">{formData.phone}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Teaching Details Card */}
-                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Teaching Details</h3>
-                                                </div>
-                                                <div className="space-y-4">
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Subjects</p>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {formData.subjects.map((subject, index) => (
-                                                                <span key={index} className="px-3 py-1.5 bg-[#3B82F6]/10 text-[#3B82F6] rounded-lg text-sm font-inter font-medium">
-                                                                    {subject}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Grade Levels</p>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {formData.gradeLevels.map((level, index) => (
-                                                                    <span key={index} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg text-sm font-inter">
-                                                                        {level}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Exam Preparation</p>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {formData.examTypes.map((exam, index) => (
-                                                                    <span key={index} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-lg text-sm font-inter">
-                                                                        {exam}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-2">Bio</p>
-                                                        <p className="text-sm font-inter text-gray-700 leading-relaxed">{formData.bio}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Experience Card */}
-                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Experience</h3>
-                                                </div>
-                                                <div className="space-y-4">
-                                                    {formData.experiences.map((exp, index) => (
-                                                        <div key={index} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                                                            <div className="flex items-start justify-between mb-2">
-                                                                <div>
-                                                                    <p className="font-inter font-semibold text-gray-900">{exp.post}</p>
-                                                                    <p className="text-sm font-inter text-gray-600">{exp.institute}, {exp.instituteState}</p>
-                                                                </div>
-                                                                <span className="text-xs font-inter text-gray-500 whitespace-nowrap">{exp.fromYear} - {exp.toYear}</span>
-                                                            </div>
-                                                            <p className="text-sm font-inter text-gray-700">{exp.description}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            {/* Verification & Documents Card */}
-                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                        <Check className="w-5 h-5 text-[#3B82F6]" />
-                                                    </div>
-                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Verification & Documents</h3>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                                        <div>
-                                                            <p className="text-sm font-inter font-semibold text-green-900">Degree Certificate</p>
-                                                            <p className="text-xs font-inter text-green-700">{formData.degreeCertificate?.name}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                                        <div>
-                                                            <p className="text-sm font-inter font-semibold text-green-900">Government ID</p>
-                                                            <p className="text-xs font-inter text-green-700">{formData.governmentId?.name}</p>
-                                                        </div>
-                                                    </div>
-                                                    {formData.nyscCertificate && (
-                                                        <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                                            <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                                            <div>
-                                                                <p className="text-sm font-inter font-semibold text-green-900">NYSC Certificate</p>
-                                                                <p className="text-xs font-inter text-green-700">{formData.nyscCertificate?.name}</p>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                                                        <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-                                                        <div>
-                                                            <p className="text-sm font-inter font-semibold text-green-900">Profile Photo</p>
-                                                            <p className="text-xs font-inter text-green-700">{formData.profilePhoto ? 'Uploaded' : 'Not uploaded'}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Media Preview Card */}
-                                            {formData.introVideo && (
-                                                <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                    <div className="flex items-center gap-3 mb-4">
-                                                        <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                            <svg className="w-5 h-5 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                            </svg>
-                                                        </div>
-                                                        <h3 className="text-lg font-outfit font-bold text-gray-900">Intro Video</h3>
-                                                    </div>
-                                                    <div className="relative w-full h-64 bg-gray-900 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 group cursor-pointer" onClick={() => setShowVideoModal(true)}>
-                                                        <video
-                                                            src={URL.createObjectURL(formData.introVideo)}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
-                                                            <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                                                <svg className="w-8 h-8 text-[#3B82F6] ml-1" fill="currentColor" viewBox="0 0 24 24">
-                                                                    <path d="M8 5v14l11-7z" />
-                                                                </svg>
-                                                            </div>
-                                                        </div>
-                                                        <div className="absolute bottom-4 left-4 right-4">
-                                                            <p className="text-white font-inter text-sm font-semibold drop-shadow-lg">Click to preview your intro video</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Payout Details Card */}
-                                            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <div className="w-10 h-10 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-[#3B82F6]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-outfit font-bold text-gray-900">Payout Details</h3>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Bank Name</p>
-                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.bankName}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Number</p>
-                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.accountNumber}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs text-gray-500 font-inter font-semibold uppercase mb-1">Account Name</p>
-                                                        <p className="text-base font-inter font-semibold text-gray-900">{formData.accountName}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="text-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                                <p className="text-sm text-blue-800 font-inter">
-                                                    <span className="font-semibold">Important:</span> By submitting, you confirm all provided information is accurate and complete.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Success Screen */}
-                                    {isSubmitted && (
-                                        <div className="text-center py-12">
-                                            <div className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-                                                <Check className="w-12 h-12 text-green-600" />
-                                            </div>
-                                            <h2 className="text-3xl md:text-4xl font-outfit font-bold text-gray-900 mb-4">Application Submitted!</h2>
-                                            <p className="text-gray-600 font-inter mb-2">
-                                                Thank you, {formData.firstName}. Our team will review your credentials within <span className="font-semibold text-gray-900">24-48 hours</span>.
-                                            </p>
-
-                                            <div className="max-w-md mx-auto mt-8 p-6 bg-white border border-gray-200 rounded-lg">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <span className="text-sm font-inter font-semibold text-gray-700">Status</span>
-                                                    <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-inter font-semibold rounded-full">PENDING REVIEW</span>
-                                                </div>
-                                                <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
-                                                    <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '50%' }}></div>
-                                                </div>
-                                                <p className="text-sm text-gray-600 font-inter">We'll notify you via email once approved.</p>
-                                            </div>
-
-                                            <button
-                                                onClick={() => router.push('/dashboard/student')}
-                                                className="mt-8 px-8 py-3 rounded-lg bg-gray-900 text-white font-inter font-semibold hover:bg-gray-800 transition-all"
-                                            >
-                                                Go to Dashboard
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* Video Modal */}
-                                    {showVideoModal && formData.introVideo && (
-                                        <div
-                                            className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 overflow-y-auto"
-                                            style={{ zIndex: 9999 }}
-                                            onClick={() => setShowVideoModal(false)}
-                                        >
-                                            <div
-                                                className="relative bg-black rounded-lg max-w-2xl w-full my-8"
-                                                onClick={(e) => e.stopPropagation()}
-                                            >
-                                                {/* Close button inside the modal */}
-                                                <button
-                                                    onClick={() => setShowVideoModal(false)}
-                                                    className="absolute top-4 right-4 z-10 text-white hover:text-gray-300 transition-colors flex items-center gap-2 bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm hover:bg-black/70"
-                                                >
-                                                    <span className="font-inter text-sm font-medium">Close</span>
-                                                    <X className="w-5 h-5" />
-                                                </button>
-                                                <video
-                                                    ref={videoRef}
-                                                    src={URL.createObjectURL(formData.introVideo)}
-                                                    controls
-                                                    autoPlay
-                                                    className="w-full rounded-lg"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-                                    {error && (
+                                    {(missingItems.length > 0 || error) && (
                                         <div className="mt-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
                                             <div className="flex items-start gap-3">
                                                 <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2293,7 +1760,25 @@ export default function StudentOnboardingPage() {
                                                 </svg>
                                                 <div className="flex-1">
                                                     <p className="text-red-800 font-inter font-semibold mb-1">Please complete the following:</p>
-                                                    <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
+                                                    {missingItems.length > 0 ? (
+                                                        <ul className="text-red-700 font-inter text-sm space-y-1">
+                                                            {missingItems.map((item, i) => (
+                                                                <li key={i}>
+                                                                    •{' '}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => goToMissingItem(item)}
+                                                                        className="underline decoration-red-300 underline-offset-2 hover:text-red-900 cursor-pointer text-left"
+                                                                    >
+                                                                        {item.label}
+                                                                    </button>
+                                                                    <span className="text-red-400"> (Step {item.step})</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-red-700 font-inter text-sm whitespace-pre-line">{error}</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2301,6 +1786,13 @@ export default function StudentOnboardingPage() {
                                 </form>
                                 {!isSubmitted && (
                                     <div className="flex justify-between items-center relative z-10">
+                                        {user && (
+                                            <span className="absolute -top-5 right-0 text-xs font-inter text-gray-500" role="status">
+                                                {serverSaveState === 'saving' && 'Saving…'}
+                                                {serverSaveState === 'saved' && '✓ Progress saved'}
+                                                {serverSaveState === 'error' && 'Saved on this device only'}
+                                            </span>
+                                        )}
                                         <button type="button" onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1 || isSubmitting} className={`px-6 py-3 rounded-lg font-inter font-medium transition-all ${step === 1 ? 'bg-white/50 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-700 hover:bg-white/90 shadow-md cursor-pointer'}`}>Back</button>
                                         <div className="flex items-center gap-3">
                                             {step === 3 && !formData.phoneVerified && formData.phone && (
@@ -2312,7 +1804,7 @@ export default function StudentOnboardingPage() {
                                                     Skip for now
                                                 </button>
                                             )}
-                                            {step < 8 ? (
+                                            {step < 5 ? (
                                                 step === 3 && formData.phoneVerified ? (
                                                     <button type="button" onClick={() => setStep(step + 1)} className="px-8 py-3 rounded-lg font-inter font-semibold transition-all text-white shadow-lg" style={{ backgroundColor: themeColor }}>Continue</button>
                                                 ) : step === 3 ? null : (
@@ -2323,9 +1815,7 @@ export default function StudentOnboardingPage() {
                                                             (step === 1 && !isStep1Valid) ||
                                                             (step === 2 && !isStep2Valid) ||
                                                             (step === 4 && !isStep4Valid) ||
-                                                            (step === 5 && !isStep5Valid) ||
-                                                            (step === 6 && !isStep6Valid) ||
-                                                            (step === 7 && !isStep7Valid)
+                                                            (step === 5 && !isStep5Valid)
                                                         }
                                                         className="px-8 py-3 rounded-lg font-inter font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-white shadow-lg"
                                                         style={{ backgroundColor: themeColor }}

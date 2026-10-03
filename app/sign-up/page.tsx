@@ -17,6 +17,18 @@ export default function SignUpPage() {
     const handleGoogleSignUp = async () => {
         setGoogleLoading(true);
         try {
+            // If the user is already signed in with the email form, LINK the
+            // Google identity to that same account instead of making a new one.
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                const { error } = await supabase.auth.linkIdentity({
+                    provider: 'google',
+                    options: { redirectTo: `${window.location.origin}/auth/callback` },
+                });
+                if (error) throw error;
+                return; // browser redirects to Google and back
+            }
+
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
@@ -48,7 +60,7 @@ export default function SignUpPage() {
 
         try {
             const { data, error } = await supabase.auth.signUp({
-                email,
+                email: email.trim().toLowerCase(),
                 password,
             });
 
@@ -60,7 +72,12 @@ export default function SignUpPage() {
                 router.push('/role-selection');
             }
         } catch (error: any) {
-            toast.error(error.message || 'Failed to sign up');
+            const msg = error?.message || '';
+            if (/rate limit|email_rate_exceeded/i.test(msg)) {
+                toast.error('Too many sign-up emails sent. For development, disable "Confirm email" in Supabase (Authentication → Sign In / Up), or wait an hour and try again.');
+            } else {
+                toast.error(msg || 'Failed to sign up');
+            }
             setLoading(false);
         }
     };

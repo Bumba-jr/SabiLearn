@@ -28,13 +28,41 @@ export async function POST(request: NextRequest) {
 
         if (profileFetchError || !profile) {
             console.error('❌ Profile fetch error:', profileFetchError);
+            // Network timeouts (e.g. flaky connection) should not be reported
+            // as a missing profile — tell the user to retry instead.
+            const msg = profileFetchError?.message || '';
+            if (!profile && !profileFetchError) {
+                return NextResponse.json(
+                    { error: 'Profile not found', details: 'No profiles row for this user' },
+                    { status: 404 }
+                );
+            }
+            if (/fetch failed|timeout|UND_ERR|network/i.test(msg)) {
+                return NextResponse.json(
+                    { error: 'Could not reach the database. Check your connection and submit again.', details: msg },
+                    { status: 503 }
+                );
+            }
             return NextResponse.json(
-                { error: 'Profile not found', details: profileFetchError?.message },
+                { error: 'Profile not found', details: msg },
                 { status: 404 }
             );
         }
 
         console.log('✅ Profile found, ID:', profile.id);
+
+        // Guard: a completed account can't be re-onboarded as a student
+        const { data: currentProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('role, onboarding_completed')
+            .eq('auth_user_id', userId)
+            .maybeSingle();
+        if (currentProfile?.onboarding_completed && currentProfile.role !== 'student') {
+            return NextResponse.json(
+                { error: `This account is already set up as a ${currentProfile.role}.` },
+                { status: 409 }
+            );
+        }
 
         // Get profile photo URL from Supabase Storage if it exists
         let avatarUrl = null;
@@ -107,13 +135,34 @@ export async function POST(request: NextRequest) {
 
         console.log('📦 Student data to upsert:', JSON.stringify(studentData, null, 2));
 
-        const { data: student, error: studentError } = await supabaseAdmin
+        // Manual upsert: ON CONFLICT requires a unique constraint on
+        // students.auth_user_id, which this database doesn't have.
+        let student: any = null;
+        let studentError: any = null;
+        const { data: existingRow } = await supabaseAdmin
             .from('students')
-            .upsert(studentData, {
-                onConflict: 'auth_user_id'
-            })
-            .select()
-            .single();
+            .select('id')
+            .eq('auth_user_id', userId)
+            .maybeSingle();
+
+        if (existingRow) {
+            const result = await supabaseAdmin
+                .from('students')
+                .update(studentData)
+                .eq('id', existingRow.id)
+                .select()
+                .single();
+            student = result.data;
+            studentError = result.error;
+        } else {
+            const result = await supabaseAdmin
+                .from('students')
+                .insert(studentData)
+                .select()
+                .single();
+            student = result.data;
+            studentError = result.error;
+        }
 
         if (studentError) {
             console.error('❌ Student upsert error:', studentError);
