@@ -29,10 +29,16 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { bookingId } = body;
+        const { bookingId, channels } = body;
         if (!bookingId) {
             return NextResponse.json({ error: 'bookingId is required' }, { status: 400 });
         }
+
+        // Optional payment-method preference from the checkout page.
+        const VALID_CHANNELS = ['card', 'bank', 'bank_transfer', 'ussd'];
+        const preferredChannels: string[] | null = Array.isArray(channels) && channels.every((c: unknown) => VALID_CHANNELS.includes(c as string))
+            ? channels
+            : null;
 
         // The booking must belong to this user and be in a payable state
         const { data: studentRow } = await supabaseAdmin
@@ -83,6 +89,7 @@ export async function POST(req: Request) {
                 amount: Math.round(booking.amount * 100),
                 reference: `sabilearn_${booking.id}_${Date.now()}`,
                 callback_url: `${origin}/payment/callback`,
+                ...(preferredChannels ? { channels: preferredChannels } : {}),
                 metadata: {
                     bookingId: booking.id,
                     purpose: 'sabilearn_lesson',

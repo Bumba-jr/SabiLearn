@@ -133,43 +133,54 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
     return (
         <>
             <div className="fixed inset-0 z-[90] bg-black/30 backdrop-blur-sm" onClick={onClose} />
-            <div className="fixed z-[100] bottom-0 right-0 sm:bottom-6 sm:right-6 w-full sm:w-[380px] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-200 flex flex-col h-[70vh] sm:h-[520px] overflow-hidden">
+            <div className="fixed z-[100] bottom-0 right-0 sm:bottom-6 sm:right-6 w-full sm:w-[400px] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-gray-200 flex flex-col h-[70vh] sm:h-[540px] overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white">
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-200 bg-white">
                     {tutorAvatar ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={tutorAvatar} alt={tutorName} className="w-9 h-9 rounded-full object-cover" />
+                        <img src={tutorAvatar} alt={tutorName} className="w-12 h-12 rounded-full object-cover bg-blue-100 flex-shrink-0" />
                     ) : (
-                        <div className="w-9 h-9 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm">
+                        <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-semibold text-lg flex-shrink-0">
                             {tutorName.charAt(0).toUpperCase()}
                         </div>
                     )}
                     <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm truncate">Chat with {tutorName}</p>
-                        <p className="text-xs text-gray-400 flex items-center gap-1">
-                            <MessageCircle className="w-3 h-3" /> SabiLearn messaging
+                        <p className="font-bold text-gray-900 text-lg truncate" style={{ fontFamily: 'var(--font-outfit)' }}>
+                            {tutorName}
                         </p>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                            <p className="text-sm text-emerald-600 font-medium">
+                                Online
+                            </p>
+                        </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors" aria-label="Close chat">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
                 </div>
 
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-gray-50">
+                {/* Messages — dotted paper background from the homepage design */}
+                <div
+                    className="flex-1 overflow-y-auto px-5 py-4 space-y-4"
+                    style={{
+                        backgroundImage: 'radial-gradient(circle, rgba(255, 107, 53, 0.15) 1px, transparent 1px)',
+                        backgroundSize: '15px 15px',
+                    }}
+                >
                     {!user ? (
                         <div className="h-full flex flex-col items-center justify-center text-center gap-3">
                             <p className="text-sm text-gray-500">Sign in to send {tutorName} a message.</p>
                             <button
                                 onClick={() => setShowSignIn(true)}
-                                className="bg-green-600 hover:bg-green-700 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
+                                className="bg-primary hover:bg-primary/90 text-white font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors"
                             >
                                 Sign In
                             </button>
                         </div>
                     ) : loading ? (
                         <div className="h-full flex items-center justify-center">
-                            <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
                         </div>
                     ) : error ? (
                         <div className="h-full flex items-center justify-center px-6 text-center">
@@ -185,20 +196,27 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
                     ) : (
                         messages.map((m) => {
                             const mine = m.sender_id === user?.id;
-                            return (
-                                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                    <div
-                                        className={`max-w-[80%] px-3.5 py-2 rounded-2xl text-sm ${
-                                            mine
-                                                ? 'bg-green-600 text-white rounded-br-md'
-                                                : 'bg-white text-gray-800 border border-gray-200 rounded-bl-md'
-                                        }`}
-                                    >
-                                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                                        <p className={`text-[10px] mt-1 ${mine ? 'text-green-100' : 'text-gray-400'}`}>
-                                            {time(m.created_at)}
-                                        </p>
+                            return mine ? (
+                                <div key={m.id} className="flex flex-col items-end">
+                                    <div className="bg-primary text-white rounded-3xl rounded-tr-md px-5 py-4 max-w-[85%]">
+                                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
                                     </div>
+                                    <div className="flex items-center gap-1 mt-1 mr-2">
+                                        <span className="text-xs text-gray-400">{time(m.created_at)}</span>
+                                        <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <svg className="w-4 h-4 text-primary -ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div key={m.id} className="flex flex-col items-start">
+                                    <div className="bg-gray-100 text-gray-900 rounded-3xl rounded-tl-md px-5 py-4 max-w-[85%]">
+                                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
+                                    </div>
+                                    <span className="text-xs text-gray-400 mt-1 ml-2">{time(m.created_at)}</span>
                                 </div>
                             );
                         })
@@ -207,24 +225,33 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
                 </div>
 
                 {/* Input */}
-                <div className="px-3 py-3 border-t border-gray-100 bg-white">
+                <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
                     {user ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                title="File sharing coming soon"
+                                className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                            </button>
                             <input
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
-                                placeholder={`Message ${tutorName}…`}
+                                placeholder="Type a message..."
                                 maxLength={2000}
-                                className="flex-1 px-4 py-2.5 rounded-full border border-gray-300 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/20 transition-all"
+                                className="flex-1 bg-white border border-gray-200 rounded-full px-5 py-3 text-sm outline-none focus:border-primary transition-colors"
                             />
                             <button
                                 onClick={send}
                                 disabled={sending || !input.trim()}
-                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white p-2.5 rounded-full transition-colors"
+                                className="w-12 h-12 bg-primary rounded-full flex items-center justify-center hover:bg-primary/90 disabled:opacity-50 transition-colors flex-shrink-0"
                                 aria-label="Send message"
                             >
-                                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                {sending ? <Loader2 className="w-5 h-5 animate-spin text-white" /> : <Send className="w-5 h-5 text-white" />}
                             </button>
                         </div>
                     ) : null}

@@ -170,25 +170,9 @@ export default function StudentDashboardPage() {
         || (b.status === 'accepted' && new Date(b.scheduled_at) < now));
     const unpaidAccepted = upcoming.filter((b) => b.payment_status !== 'paid');
 
-    const payNow = async (b: Booking) => {
-        setPaying(b.id);
-        try {
-            const res = await fetch('/api/payments/initialize', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookingId: b.id }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                toast.error(data.error || 'Could not start the payment.');
-                return;
-            }
-            window.location.href = data.authorizationUrl;
-        } catch {
-            toast.error('Could not reach the payment service.');
-        } finally {
-            setPaying(null);
-        }
+    const payNow = (b: Booking) => {
+        // Checkout page handles payment-method selection + Paystack start
+        router.push(`/checkout/${b.id}`);
     };
 
     const cancelBooking = async (b: Booking) => {
@@ -276,7 +260,7 @@ export default function StudentDashboardPage() {
                             <button
                                 onClick={() => payNow(b)}
                                 disabled={paying === b.id}
-                                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                                className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
                             >
                                 {paying === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
                                 Pay now

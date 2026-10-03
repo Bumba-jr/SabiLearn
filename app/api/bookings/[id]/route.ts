@@ -9,6 +9,73 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     complete: ['accepted'],
 };
 
+// GET /api/bookings/[id] — one booking for the student, their parent, or the tutor
+export async function GET(
+    req: Request,
+    { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
+    try {
+        const authHeader = req.headers.get('authorization');
+        if (!authHeader) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const resolvedParams = await Promise.resolve(params);
+        const { id } = resolvedParams;
+
+        const { data: booking, error: fetchError } = await supabaseAdmin
+            .from('sessions')
+            .select(`
+                *,
+                tutor:tutors(id, auth_user_id, user_id, name, avatar_url, location, hourly_rate),
+                student:students(id, user_id, name, email)
+            `)
+            .eq('id', id)
+            .single();
+
+        if (fetchError || !booking) {
+            return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+        }
+
+        const tutorAuthId = (booking.tutor as any)?.auth_user_id || (booking.tutor as any)?.user_id;
+        const studentUserId = (booking.student as any)?.user_id;
+
+        const isTutor = tutorAuthId === user.id;
+        const isStudent = studentUserId === user.id;
+
+        let isParentOfChild = false;
+        if (!isStudent && !isTutor) {
+            const { data: childRow } = await supabaseAdmin
+                .from('students')
+                .select('parent_id')
+                .eq('id', booking.student_id)
+                .maybeSingle();
+            if (childRow?.parent_id) {
+                const { data: parentProfile } = await supabaseAdmin
+                    .from('profiles')
+                    .select('auth_user_id')
+                    .eq('id', childRow.parent_id)
+                    .maybeSingle();
+                isParentOfChild = parentProfile?.auth_user_id === user.id;
+            }
+        }
+
+        if (!isTutor && !isStudent && !isParentOfChild) {
+            return NextResponse.json({ error: 'You do not have access to this booking' }, { status: 403 });
+        }
+
+        return NextResponse.json({ booking });
+    } catch (error) {
+        console.error('Error in booking GET:', error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
+
 // PATCH /api/bookings/[id] — tutor accepts/declines/completes, student cancels
 export async function PATCH(
     req: Request,

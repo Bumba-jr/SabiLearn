@@ -264,7 +264,7 @@ export default function ParentDashboardPage() {
                     </div>
                     <button
                         onClick={() => router.push('/find-tutors')}
-                        className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                        className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
                     >
                         <Search className="w-4 h-4" /> Find a Tutor
                     </button>
@@ -402,20 +402,23 @@ export default function ParentDashboardPage() {
                     </div>
                 )}
 
-                {/* Overview stats */}
+                {/* Overview stats — styled after the homepage parent dashboard design */}
+                <h2 className="text-2xl font-bold text-gray-900 mb-6" style={{ fontFamily: 'var(--font-outfit)' }}>This Week&apos;s Overview</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[
-                        { label: 'Children', value: children.length, icon: Users, color: 'text-green-600 bg-green-50' },
-                        { label: 'Lessons Booked', value: bookings.length, icon: Calendar, color: 'text-blue-500 bg-blue-50' },
-                        { label: 'Awaiting Tutor', value: allPending.length, icon: Hourglass, color: 'text-orange-500 bg-orange-50' },
-                        { label: 'Hours Learned', value: totalHours, icon: Wallet, color: 'text-purple-500 bg-purple-50' },
+                        { label: 'Children', value: children.length, icon: Users, color: 'text-indigo-500 bg-indigo-500/10' },
+                        { label: 'Lessons Booked', value: bookings.length, icon: Calendar, color: 'text-blue-500 bg-blue-500/10' },
+                        { label: 'Awaiting Tutor', value: allPending.length, icon: Hourglass, color: 'text-orange-500 bg-orange-500/10' },
+                        { label: 'Hours Learned', value: totalHours, icon: Wallet, color: 'text-emerald-500 bg-emerald-500/10' },
                     ].map(({ label, value, icon: Icon, color }) => (
-                        <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${color}`}>
-                                <Icon className="w-5 h-5" />
+                        <div key={label} className="border border-gray-200 rounded-xl p-5 bg-white">
+                            <div className="flex flex-col items-start gap-2 mb-2">
+                                <div className={`p-2 rounded-full ${color}`}>
+                                    <Icon className="w-5 h-5" />
+                                </div>
+                                <span className={`text-sm font-medium ${color.split(' ')[0]}`}>{label}</span>
                             </div>
-                            <p className="text-2xl font-bold text-gray-900">{value}</p>
-                            <p className="text-xs text-gray-500">{label}</p>
+                            <p className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'var(--font-outfit)' }}>{value}</p>
                         </div>
                     ))}
                 </div>
@@ -715,19 +718,8 @@ export default function ParentDashboardPage() {
                                             )}
                                             {canPay && (
                                                 <button
-                                                    onClick={async () => {
-                                                        try {
-                                                            const res = await fetch('/api/payments/initialize', {
-                                                                method: 'POST',
-                                                                headers: { 'Content-Type': 'application/json' },
-                                                                body: JSON.stringify({ bookingId: b.id }),
-                                                            });
-                                                            const data = await res.json();
-                                                            if (!res.ok) { toast.error(data.error || 'Could not start payment.'); return; }
-                                                            window.location.href = data.authorizationUrl;
-                                                        } catch { toast.error('Could not reach the payment service.'); }
-                                                    }}
-                                                    className="mt-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors"
+                                                    onClick={() => router.push(`/checkout/${b.id}`)}
+                                                    className="mt-2 bg-primary hover:bg-primary/90 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors"
                                                 >
                                                     <Wallet className="w-3.5 h-3.5" /> Pay now
                                                 </button>

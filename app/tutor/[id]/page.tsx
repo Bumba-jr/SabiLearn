@@ -71,6 +71,16 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
             .map(([day, ranges]) => `${names[day] || day}: ${ranges.map((r) => `${r.from}–${r.to}`).join(', ')}`);
         return lines.length > 0 ? lines : null;
     })();
+    // Day chips for the "Availability Snapshot" card (homepage design)
+    const availabilityDays = (() => {
+        const sched = tutor?.weeklyAvailability as Record<string, Array<{ from: string; to: string }>> | null | undefined;
+        if (!sched || typeof sched !== 'object') return [] as string[];
+        const order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+        const names: Record<string, string> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+        return order
+            .filter((day) => Array.isArray(sched[day]) && sched[day].length > 0)
+            .map((day) => names[day]);
+    })();
     const [showChat, setShowChat] = useState(false);
     const [showReport, setShowReport] = useState(false);
     const [myChildren, setMyChildren] = useState<Array<{ id: string; name: string }>>([]);
@@ -508,10 +518,20 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
 
                             {/* Availability */}
                             <div className="mb-6">
-                                <h3 className="font-semibold text-gray-900 mb-3">Availability</h3>
-                                <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
-                                    {tutor.availability}
-                                </div>
+                                <h3 className="font-semibold text-gray-900 mb-3">Availability Snapshot</h3>
+                                {availabilityDays.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {availabilityDays.map((day) => (
+                                            <span key={day} className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium">
+                                                {day}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                                        {tutor.availability}
+                                    </div>
+                                )}
                                 {weeklyScheduleText && (
                                     <div className="text-sm text-gray-600 bg-green-50 border border-green-100 p-3 rounded-lg mt-2">
                                         <p className="font-semibold text-green-800 mb-1">Free hours</p>
@@ -540,7 +560,7 @@ export default function TutorProfilePage({ params }: { params: Promise<{ id: str
                                     <button
                                         onClick={handleBookClick}
                                         disabled={!tutor.verified}
-                                        className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                                        className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
                                     >
                                         <Calendar className="w-5 h-5" />
                                         Book a Session

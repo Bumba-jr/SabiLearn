@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import {
     Star, Calendar, Wallet, CheckCircle2, Clock, X, Check, Loader2,
     MapPin, Video, ChevronRight, Plus, Trash2, MessageCircle, Radio, Zap,
+    DollarSign, Users,
 } from 'lucide-react';
 import { ChatPopup } from '@/components/ChatPopup';
 import { Megaphone } from 'lucide-react';
@@ -374,43 +375,92 @@ export default function TutorDashboardPage() {
                     </div>
                 )}
 
-                {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-                    {statCards.map(({ label, value, icon: Icon, color }) => (
-                        <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${color}`}>
-                                <Icon className="w-5 h-5" />
+                {/* Dashboard panel — styled after the homepage design */}
+                <div className="rounded-3xl border border-slate-300/40 shadow-xl bg-slate-100/50 p-4 md:p-5">
+                    <div className="grid lg:grid-cols-[300px_1fr] gap-8">
+                        {/* Sidebar */}
+                        <aside className="rounded-2xl p-6 h-fit">
+                            <div className="mb-6 bg-blue-600/5 p-4 rounded-2xl">
+                                <h3 className="text-lg font-bold text-gray-900 mb-1" style={{ fontFamily: 'var(--font-outfit)' }}>Teacher Dashboard</h3>
+                                <p className="text-sm text-gray-500">{tutor.is_verified ? 'Verified tutor' : 'Verification in progress'}</p>
                             </div>
-                            <p className="text-xl font-bold text-gray-900">{value}</p>
-                            <p className="text-xs text-gray-500">{label}</p>
-                        </div>
-                    ))}
-                </div>
+                            <nav className="space-y-2 hidden lg:block">
+                                {([
+                                    ['overview', 'Earnings', DollarSign],
+                                    ['requests', 'Booking Requests', Calendar],
+                                    ['sessions', 'My Sessions', Users],
+                                    ['availability', 'Availability', Calendar],
+                                    ['messages', 'Messages', MessageCircle],
+                                ] as const).map(([key, label, Icon]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setTab(key)}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-left transition-colors ${
+                                            tab === key ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <Icon className="w-5 h-5" />
+                                        <span>
+                                            {label}
+                                            {key === 'requests' && stats.pendingCount ? ` (${stats.pendingCount})` : ''}
+                                            {key === 'messages' && stats.unreadMessages ? ` (${stats.unreadMessages})` : ''}
+                                        </span>
+                                    </button>
+                                ))}
+                            </nav>
+                            {/* Mobile tab switcher */}
+                            <div className="flex gap-2 flex-wrap lg:hidden">
+                                {([
+                                    ['overview', 'Overview'],
+                                    ['requests', `Requests${stats.pendingCount ? ` (${stats.pendingCount})` : ''}`],
+                                    ['sessions', 'Sessions'],
+                                    ['availability', 'Availability'],
+                                    ['messages', `Messages${stats.unreadMessages ? ` (${stats.unreadMessages})` : ''}`],
+                                ] as const).map(([key, label]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setTab(key)}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            tab === key ? 'bg-primary/10 text-primary' : 'text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </aside>
 
-                {/* Tabs */}
-                <div className="flex gap-2 mb-6 flex-wrap">
-                    {([
-                        ['overview', 'Overview'],
-                        ['requests', `Booking Requests${stats.pendingCount ? ` (${stats.pendingCount})` : ''}`],
-                        ['sessions', 'Sessions'],
-                        ['availability', 'Availability'],
-                        ['messages', `Messages${stats.unreadMessages ? ` (${stats.unreadMessages})` : ''}`],
-                    ] as const).map(([key, label]) => (
-                        <button
-                            key={key}
-                            onClick={() => setTab(key)}
-                            className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-                                tab === key ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                            }`}
-                        >
-                            {label}
-                        </button>
-                    ))}
-                </div>
+                        {/* Main card */}
+                        <div className="bg-white rounded-2xl p-6 md:p-8">
+                            {/* Stats */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+                                {statCards.map(({ label, value, icon: Icon, color }) => (
+                                    <div key={label} className="border border-gray-200 rounded-xl p-4">
+                                        <div className={`w-9 h-9 rounded-full p-2 flex items-center justify-center mb-2 ${color}`}>
+                                            <Icon className="w-5 h-5" />
+                                        </div>
+                                        <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'var(--font-outfit)' }}>{value}</p>
+                                        <p className="text-xs text-gray-500">{label}</p>
+                                    </div>
+                                ))}
+                            </div>
 
                 {/* Overview */}
                 {tab === 'overview' && (
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                        {/* Earnings Overview — navy balance card from the homepage design */}
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6" style={{ fontFamily: 'var(--font-outfit)' }}>Earnings Overview</h2>
+                        <div className="bg-secondary rounded-2xl p-6 mb-8">
+                            <p className="text-sm text-gray-300 mb-2">Available Balance</p>
+                            <p className="text-4xl font-bold text-white mb-4" style={{ fontFamily: 'var(--font-outfit)' }}>{naira(stats.earningsTotal)}</p>
+                            <button
+                                onClick={() => toast.info('Payouts to bank are coming soon — your earnings are safely tracked.')}
+                                className="bg-white text-secondary px-6 py-2 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+                            >
+                                Withdraw to Bank
+                            </button>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-6">
                         <div>
                             <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
                                 New requests <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -427,7 +477,7 @@ export default function TutorDashboardPage() {
                         </div>
                         <div>
                             <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                                Next sessions <ChevronRight className="w-4 h-4 text-gray-400" />
+                                Upcoming Classes <ChevronRight className="w-4 h-4 text-gray-400" />
                             </h2>
                             {upcoming.length === 0 ? (
                                 <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">
@@ -438,6 +488,7 @@ export default function TutorDashboardPage() {
                                     {upcoming.slice(0, 3).map((b) => <BookingCard key={b.id} b={b} />)}
                                 </div>
                             )}
+                        </div>
                         </div>
                     </div>
                 )}
@@ -606,6 +657,9 @@ export default function TutorDashboardPage() {
                         </div>
                     </div>
                 )}
+                        </div>
+                    </div>
+                </div>
             {activeChat && (
                 <ChatPopup
                     isOpen
