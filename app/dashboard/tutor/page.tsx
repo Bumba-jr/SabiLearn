@@ -370,6 +370,21 @@ export default function TutorDashboardPage() {
                     </div>
                 )}
 
+                {/* Stats strip — full width, above the dashboard panel */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+                    {statCards.map(({ label, value, icon: Icon, color }) => (
+                        <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col justify-between gap-4 min-h-[120px]">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${color}`}>
+                                <Icon className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold text-gray-900 leading-tight" style={{ fontFamily: 'var(--font-outfit)' }}>{value}</p>
+                                <p className="text-sm text-gray-500 mt-0.5">{label}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
                 {/* Dashboard panel — styled after the homepage design */}
                 <div className="rounded-3xl border border-slate-300/40 shadow-xl bg-slate-100/50 p-4 md:p-5">
                     <div className="grid lg:grid-cols-[300px_1fr] gap-8">
@@ -427,18 +442,6 @@ export default function TutorDashboardPage() {
 
                         {/* Main card */}
                         <div className="bg-white rounded-2xl p-6 md:p-8">
-                            {/* Stats */}
-                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
-                                {statCards.map(({ label, value, icon: Icon, color }) => (
-                                    <div key={label} className="border border-gray-200 rounded-xl p-4">
-                                        <div className={`w-9 h-9 rounded-full p-2 flex items-center justify-center mb-2 ${color}`}>
-                                            <Icon className="w-5 h-5" />
-                                        </div>
-                                        <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'var(--font-outfit)' }}>{value}</p>
-                                        <p className="text-xs text-gray-500">{label}</p>
-                                    </div>
-                                ))}
-                            </div>
 
                 {/* Overview */}
                 {tab === 'overview' && (
