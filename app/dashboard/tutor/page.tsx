@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
     Star, Calendar, Wallet, CheckCircle2, Clock, X, Check, Loader2,
     MapPin, Video, ChevronRight, Plus, Trash2, MessageCircle, Radio, Zap,
-    DollarSign, Users,
+    DollarSign, Users, Pencil,
 } from 'lucide-react';
 import { ChatPopup } from '@/components/ChatPopup';
 import { Megaphone } from 'lucide-react';
@@ -69,6 +69,40 @@ export default function TutorDashboardPage() {
     const [instantLoading, setInstantLoading] = useState(false);
     const [adminRequests, setAdminRequests] = useState<any[]>([]);
     const [showAdminChat, setShowAdminChat] = useState(false);
+    const [rateEditing, setRateEditing] = useState(false);
+    const [rateInput, setRateInput] = useState('');
+    const [savingRate, setSavingRate] = useState(false);
+
+    const saveRate = async () => {
+        const rate = Number(rateInput);
+        if (!Number.isFinite(rate) || rate < 0) {
+            toast.error('Enter a valid hourly rate.');
+            return;
+        }
+        setSavingRate(true);
+        try {
+            const res = await fetch('/api/tutor/rate', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ hourlyRate: rate }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(data.error || 'Could not save your rate.');
+                return;
+            }
+            toast.success('Your hourly price is updated — parents now see it on your profile.');
+            setRateEditing(false);
+            loadDashboard();
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setSavingRate(false);
+        }
+    };
 
     const loadDashboard = useCallback(async () => {
         try {
@@ -334,7 +368,45 @@ export default function TutorDashboardPage() {
                                 {tutor.is_verified ? '✓ Verified tutor' : '⏳ Verification in progress'}
                             </span>
                             {tutor.location && <span><MapPin className="w-3.5 h-3.5 inline" /> {tutor.location}</span>}
-                            {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Rate not set</span>}
+                            {rateEditing ? (
+                                <span className="flex items-center gap-1.5">
+                                    <span>₦</span>
+                                    <input
+                                        autoFocus
+                                        type="number"
+                                        min={0}
+                                        step={100}
+                                        value={rateInput}
+                                        onChange={(e) => setRateInput(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && saveRate()}
+                                        className="w-24 border border-gray-300 rounded-md px-2 py-0.5 text-sm text-gray-700 outline-none focus:border-primary"
+                                        placeholder="5000"
+                                    />
+                                    <span>/hr</span>
+                                    <button
+                                        onClick={saveRate}
+                                        disabled={savingRate}
+                                        className="text-green-700 font-semibold hover:underline disabled:opacity-50"
+                                    >
+                                        {savingRate ? 'Saving…' : 'Save'}
+                                    </button>
+                                    <button
+                                        onClick={() => setRateEditing(false)}
+                                        className="text-gray-400 hover:text-gray-600"
+                                    >
+                                        Cancel
+                                    </button>
+                                </span>
+                            ) : (
+                                <button
+                                    onClick={() => { setRateInput(tutor.hourly_rate ? String(tutor.hourly_rate) : ''); setRateEditing(true); }}
+                                    className={`flex items-center gap-1 hover:text-gray-700 transition-colors ${tutor.hourly_rate ? '' : 'text-primary font-medium'}`}
+                                    title="Set or change your hourly price"
+                                >
+                                    {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Set your price (₦/hr)</span>}
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                            )}
                         </p>
                     </div>
                     <div className="flex items-center gap-4">
