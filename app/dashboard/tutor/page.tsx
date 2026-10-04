@@ -8,8 +8,9 @@ import { toast } from 'sonner';
 import {
     Star, Calendar, Wallet, CheckCircle2, Clock, X, Check, Loader2,
     MapPin, Video, ChevronRight, Plus, Trash2, MessageCircle, Radio, Zap,
-    DollarSign, Users, Pencil,
+    DollarSign, Users, Pencil, Calculator,
 } from 'lucide-react';
+import { calcLessonPlan, PERIOD_DISCOUNT } from '@/lib/lesson-plan';
 import { ChatPopup } from '@/components/ChatPopup';
 import { Megaphone } from 'lucide-react';
 
@@ -73,7 +74,7 @@ export default function TutorDashboardPage() {
     const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
     const [feedbackText, setFeedbackText] = useState('');
     const [savingFeedback, setSavingFeedback] = useState(false);
-    const [rateEditing, setRateEditing] = useState(false);
+    const [showPricing, setShowPricing] = useState(false);
     const [rateInput, setRateInput] = useState('');
     const [savingRate, setSavingRate] = useState(false);
 
@@ -125,7 +126,7 @@ export default function TutorDashboardPage() {
                 return;
             }
             toast.success('Your hourly price is updated — parents now see it on your profile.');
-            setRateEditing(false);
+            setShowPricing(false);
             loadDashboard();
         } catch {
             toast.error('Could not reach the server.');
@@ -449,45 +450,14 @@ export default function TutorDashboardPage() {
                                 {tutor.is_verified ? '✓ Verified tutor' : '⏳ Verification in progress'}
                             </span>
                             {tutor.location && <span><MapPin className="w-3.5 h-3.5 inline" /> {tutor.location}</span>}
-                            {rateEditing ? (
-                                <span className="flex items-center gap-1.5">
-                                    <span>₦</span>
-                                    <input
-                                        autoFocus
-                                        type="number"
-                                        min={0}
-                                        step={100}
-                                        value={rateInput}
-                                        onChange={(e) => setRateInput(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && saveRate()}
-                                        className="w-24 border border-gray-300 rounded-md px-2 py-0.5 text-sm text-gray-700 outline-none focus:border-primary"
-                                        placeholder="5000"
-                                    />
-                                    <span>/hr</span>
-                                    <button
-                                        onClick={saveRate}
-                                        disabled={savingRate}
-                                        className="text-green-700 font-semibold hover:underline disabled:opacity-50"
-                                    >
-                                        {savingRate ? 'Saving…' : 'Save'}
-                                    </button>
-                                    <button
-                                        onClick={() => setRateEditing(false)}
-                                        className="text-gray-400 hover:text-gray-600"
-                                    >
-                                        Cancel
-                                    </button>
-                                </span>
-                            ) : (
-                                <button
-                                    onClick={() => { setRateInput(tutor.hourly_rate ? String(tutor.hourly_rate) : ''); setRateEditing(true); }}
-                                    className={`flex items-center gap-1 hover:text-gray-700 transition-colors ${tutor.hourly_rate ? '' : 'text-primary font-medium'}`}
-                                    title="Set or change your hourly price"
-                                >
-                                    {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Set your price (₦/hr)</span>}
-                                    <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                            )}
+                            <button
+                                onClick={() => { setRateInput(tutor.hourly_rate ? String(tutor.hourly_rate) : ''); setShowPricing(true); }}
+                                className={`flex items-center gap-1 hover:text-gray-700 transition-colors ${tutor.hourly_rate ? '' : 'text-primary font-medium'}`}
+                                title="Set or change your hourly price"
+                            >
+                                {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Set your price (₦/hr)</span>}
+                                <Pencil className="w-3.5 h-3.5" />
+                            </button>
                         </p>
                     </div>
                     <div className="flex items-center gap-4">
@@ -830,6 +800,100 @@ export default function TutorDashboardPage() {
                     withAdmin
                     tutorName="SabiLearn Team"
                 />
+            )}
+            {/* Pricing settings modal — set the hourly rate and preview what each plan pays */}
+            {showPricing && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowPricing(false)}>
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-xl font-bold text-gray-900" style={{ fontFamily: 'var(--font-outfit)' }}>Your Pricing</h3>
+                            <button onClick={() => setShowPricing(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+                        <p className="text-sm text-gray-500 mb-6">Set your hourly rate — parents see it on your profile and their lesson price is calculated from it.</p>
+
+                        {/* Rate input */}
+                        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Hourly rate</label>
+                        <div className="relative mb-6">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₦</span>
+                            <input
+                                autoFocus
+                                type="number"
+                                min={0}
+                                step={100}
+                                value={rateInput}
+                                onChange={(e) => setRateInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && saveRate()}
+                                placeholder="5000"
+                                className="w-full pl-9 pr-4 py-3.5 border border-gray-300 rounded-xl text-lg font-semibold text-gray-900 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-400">per hour</span>
+                        </div>
+
+                        {/* Earnings preview */}
+                        {Number(rateInput) > 0 && (
+                            <div className="mb-6">
+                                <p className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-3">
+                                    <Calculator className="w-4 h-4 text-primary" />
+                                    What each plan pays you (1-hour lessons)
+                                </p>
+                                <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="bg-gray-50 text-left">
+                                                <th className="px-4 py-2.5 font-semibold text-gray-600">Lessons / week</th>
+                                                <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Weekly</th>
+                                                <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Monthly <span className="text-[10px] text-emerald-600">−5%</span></th>
+                                                <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Yearly <span className="text-[10px] text-emerald-600">−10%</span></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {[1, 2, 3, 5].map((days) => (
+                                                <tr key={days} className="border-t border-gray-100">
+                                                    <td className="px-4 py-2.5 font-medium text-gray-900">{days}× a week</td>
+                                                    {(['weekly', 'monthly', 'yearly'] as const).map((period) => {
+                                                        const plan = calcLessonPlan({ hourlyRate: Number(rateInput), hoursPerSession: 1, sessionsPerWeek: days, period });
+                                                        return (
+                                                            <td key={period} className="px-4 py-2.5 text-right font-semibold text-gray-900">
+                                                                ₦{plan.total.toLocaleString()}
+                                                                {period === 'weekly' && (
+                                                                    <span className="block text-[11px] font-normal text-gray-400">₦{plan.perWeek.toLocaleString()}/wk</span>
+                                                                )}
+                                                                {period !== 'weekly' && PERIOD_DISCOUNT[period] > 0 && (
+                                                                    <span className="block text-[11px] font-normal text-gray-400 line-through">₦{plan.subtotal.toLocaleString()}</span>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-2">
+                                    Longer plans give parents a loyalty discount (5% monthly, 10% yearly). Students booking 1.5–3 hour lessons pay proportionally more.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={saveRate}
+                                disabled={savingRate || rateInput === ''}
+                                className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-semibold py-3.5 rounded-xl transition-colors"
+                            >
+                                {savingRate ? 'Saving…' : 'Save Pricing'}
+                            </button>
+                            <button
+                                onClick={() => setShowPricing(false)}
+                                className="px-6 py-3.5 rounded-xl text-gray-500 border border-gray-200 hover:bg-gray-50 font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
             {instantOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setInstantOpen(false)}>
