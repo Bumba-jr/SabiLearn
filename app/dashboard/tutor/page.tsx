@@ -433,38 +433,51 @@ export default function TutorDashboardPage() {
     return (
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
-                {/* Profile header */}
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
+                {/* Profile header — navy banner */}
+                <div className="rounded-3xl bg-secondary p-6 md:p-7 mb-6 flex flex-wrap items-center gap-5 shadow-lg">
                     {tutor.avatar_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={tutor.avatar_url} alt={tutor.name} className="w-16 h-16 rounded-2xl object-cover" />
+                        <img src={tutor.avatar_url} alt={tutor.name} className="w-16 h-16 rounded-2xl object-cover ring-2 ring-white/25" />
                     ) : (
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-green-500 text-white flex items-center justify-center text-2xl font-bold">
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-orange-500 text-white flex items-center justify-center text-2xl font-bold ring-2 ring-white/25">
                             {tutor.name?.charAt(0).toUpperCase()}
                         </div>
                     )}
                     <div className="flex-1 min-w-0">
-                        <h1 className="text-2xl font-bold text-gray-900">{tutor.name}</h1>
-                        <p className="text-sm text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
-                            <span className={tutor.is_verified ? 'text-green-600 font-medium' : 'text-orange-500 font-medium'}>
-                                {tutor.is_verified ? '✓ Verified tutor' : '⏳ Verification in progress'}
-                            </span>
-                            {tutor.location && <span><MapPin className="w-3.5 h-3.5 inline" /> {tutor.location}</span>}
+                        <h1 className="text-2xl font-bold text-white">{tutor.name}</h1>
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                            {tutor.is_verified ? (
+                                <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    ✓ Verified tutor
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 bg-orange-500/20 text-orange-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    ⏳ Verification in progress
+                                </span>
+                            )}
+                            {tutor.location && (
+                                <span className="inline-flex items-center gap-1 text-gray-300 text-sm">
+                                    <MapPin className="w-3.5 h-3.5" /> {tutor.location}
+                                </span>
+                            )}
                             <button
                                 onClick={() => { setRateInput(tutor.hourly_rate ? String(tutor.hourly_rate) : ''); setShowPricing(true); }}
-                                className={`flex items-center gap-1 hover:text-gray-700 transition-colors ${tutor.hourly_rate ? '' : 'text-primary font-medium'}`}
+                                className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-3 py-1 rounded-full text-xs font-semibold transition-colors"
                                 title="Set or change your hourly price"
                             >
-                                {tutor.hourly_rate ? <span>{naira(Number(tutor.hourly_rate))}/hr</span> : <span>Set your price (₦/hr)</span>}
-                                <Pencil className="w-3.5 h-3.5" />
+                                {tutor.hourly_rate ? `${naira(Number(tutor.hourly_rate))}/hr` : 'Set your price (₦/hr)'}
+                                <Pencil className="w-3 h-3" />
                             </button>
-                        </p>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <SignOutButton />
-                        <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-primary font-semibold hover:underline">
-                            View public profile →
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => router.push(`/tutor/${tutor.id}`)}
+                            className="border border-white/30 text-white hover:bg-white/10 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                        >
+                            View Public Profile
                         </button>
+                        <SignOutButton variant="dark" />
                     </div>
                 </div>
 
@@ -842,7 +855,7 @@ export default function TutorDashboardPage() {
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr className="bg-gray-50 text-left">
-                                                <th className="px-4 py-2.5 font-semibold text-gray-600">Lessons / week</th>
+                                                <th className="px-4 py-2.5 font-semibold text-gray-600">Lessons per week</th>
                                                 <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Weekly</th>
                                                 <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Monthly <span className="text-[10px] text-emerald-600">−5%</span></th>
                                                 <th className="px-4 py-2.5 font-semibold text-gray-600 text-right">Yearly <span className="text-[10px] text-emerald-600">−10%</span></th>
@@ -851,7 +864,7 @@ export default function TutorDashboardPage() {
                                         <tbody>
                                             {[1, 2, 3, 5].map((days) => (
                                                 <tr key={days} className="border-t border-gray-100">
-                                                    <td className="px-4 py-2.5 font-medium text-gray-900">{days}× a week</td>
+                                                    <td className="px-4 py-2.5 font-medium text-gray-900">{days} hr{days > 1 ? 's' : ''} a week</td>
                                                     {(['weekly', 'monthly', 'yearly'] as const).map((period) => {
                                                         const plan = calcLessonPlan({ hourlyRate: Number(rateInput), hoursPerSession: 1, sessionsPerWeek: days, period });
                                                         return (

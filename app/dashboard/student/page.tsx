@@ -202,7 +202,7 @@ export default function StudentDashboardPage() {
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                         <p className="text-lg text-gray-600 mb-4">Sign in to view your dashboard.</p>
-                        <button onClick={() => router.push('/sign-in')} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
+                        <button onClick={() => router.push('/sign-in')} className="bg-primary text-white px-6 py-3 rounded-lg font-semibold">Sign In</button>
                     </div>
                 </div>
             </div>
@@ -280,28 +280,36 @@ export default function StudentDashboardPage() {
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
                 {/* Header */}
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex items-start justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">
+                <div className="rounded-3xl bg-secondary p-6 md:p-7 mb-6 flex flex-wrap items-center gap-5 shadow-lg">
+                    {student?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={student.avatar_url} alt={student.name || 'You'} className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/25" />
+                    ) : (
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-orange-500 text-white flex items-center justify-center text-xl font-bold ring-2 ring-white/25">
+                            {(student?.name || 'S').charAt(0).toUpperCase()}
+                        </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                        <h1 className="text-2xl font-bold text-white">
                             Welcome back{student?.name ? `, ${student.name.split(' ')[0]}` : ''} 👋
                         </h1>
-                        <p className="text-sm text-gray-500 mt-0.5">Track your lessons, payments and favorite tutors.</p>
+                        <p className="text-sm text-gray-300 mt-0.5">Track your lessons, payments and favorite tutors.</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                             {myCode && (
                                 <button
                                     onClick={() => { navigator.clipboard.writeText(myCode); toast.success(`Code ${myCode} copied.`); }}
                                     title="Click to copy"
-                                    className="text-xs font-mono font-semibold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-md hover:bg-primary/20 transition-colors"
+                                    className="text-xs font-mono font-semibold text-white bg-white/10 border border-white/20 px-2.5 py-1 rounded-md hover:bg-white/20 transition-colors"
                                 >
                                     My code: {myCode} ⧉
                                 </button>
                             )}
                             {parentLinked && (
-                                <span className="text-xs text-gray-400">Linked to a family account ✓</span>
+                                <span className="text-xs text-gray-300">Linked to a family account ✓</span>
                             )}
                         </div>
                     </div>
-                    <SignOutButton />
+                    <SignOutButton variant="dark" />
                 </div>
 
                 {/* Family linking for self-signed-up students */}
@@ -314,7 +322,7 @@ export default function StudentDashboardPage() {
                             value={familyCodeInput}
                             onChange={(e) => setFamilyCodeInput(e.target.value.toUpperCase())}
                             placeholder="SB-XXXXXX"
-                            className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-mono outline-none focus:border-green-600 w-[150px]"
+                            className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-mono outline-none focus:border-primary w-[150px]"
                         />
                         <button
                             onClick={claimFamilyCode}
@@ -427,7 +435,7 @@ export default function StudentDashboardPage() {
                             {upcoming.length === 0 ? (
                                 <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center">
                                     <p className="text-sm text-gray-400 mb-4">No upcoming lessons yet.</p>
-                                    <button onClick={() => router.push('/find-tutors')} className="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
+                                    <button onClick={() => router.push('/find-tutors')} className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
                                         Find a Tutor
                                     </button>
                                 </div>
@@ -538,7 +546,7 @@ export default function StudentDashboardPage() {
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={c.otherAvatar} alt={c.otherName} className="w-11 h-11 rounded-full object-cover" />
                                 ) : (
-                                    <div className="w-11 h-11 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm">
+                                    <div className="w-11 h-11 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm">
                                         {c.otherName.charAt(0).toUpperCase()}
                                     </div>
                                 )}
@@ -548,7 +556,7 @@ export default function StudentDashboardPage() {
                                 </div>
                                 <div className="text-right">
                                     {c.unread > 0 && (
-                                        <span className="bg-green-600 text-white text-xs font-bold rounded-full px-2 py-0.5">{c.unread}</span>
+                                        <span className="bg-primary text-white text-xs font-bold rounded-full px-2 py-0.5">{c.unread}</span>
                                     )}
                                     <p className="text-[10px] text-gray-400 mt-1">
                                         {c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}

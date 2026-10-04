@@ -250,19 +250,19 @@ export default function ParentDashboardPage() {
         <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
                 {/* Header */}
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center">
-                        <Users className="w-6 h-6" />
+                <div className="rounded-3xl bg-secondary p-6 md:p-7 mb-6 flex flex-wrap items-center gap-5 shadow-lg">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-orange-500 text-white flex items-center justify-center ring-2 ring-white/25">
+                        <Users className="w-7 h-7" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <h1 className="text-2xl font-bold text-gray-900">Parent Dashboard</h1>
-                        <p className="text-sm text-gray-500">Follow each child's lessons and progress in one place.</p>
+                        <h1 className="text-2xl font-bold text-white">Parent Dashboard</h1>
+                        <p className="text-sm text-gray-300 mt-0.5">Follow each child&apos;s lessons and progress in one place.</p>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <SignOutButton />
+                    <div className="flex items-center gap-3">
+                        <SignOutButton variant="dark" />
                         <button
                             onClick={() => router.push('/find-tutors')}
-                            className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                            className="bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-colors"
                         >
                             <Search className="w-4 h-4" /> Find a Tutor
                         </button>
