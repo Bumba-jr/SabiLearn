@@ -89,6 +89,7 @@ export default function ParentDashboardPage() {
     const [savingPassword, setSavingPassword] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [liveClasses, setLiveClasses] = useState<any[]>([]);
+    const [recentFeedback, setRecentFeedback] = useState<any[]>([]);
 
     const loadDashboard = useCallback(async () => {
         try {
@@ -101,6 +102,7 @@ export default function ParentDashboardPage() {
             setChildren(data.children || []);
             setBookings(data.myBookings || []);
             setAdminRequests(data.adminRequests || []);
+            setRecentFeedback(data.recentFeedback || []);
         } catch {
             toast.error('Could not load your dashboard. Please refresh.');
         } finally {
@@ -419,6 +421,36 @@ export default function ParentDashboardPage() {
                         </div>
                     ))}
                 </div>
+
+                {/* Recent Feedback — notes tutors leave after completed lessons */}
+                {recentFeedback.length > 0 && (
+                    <div className="mb-8">
+                        <h2 className="text-lg font-bold text-gray-900 mb-4" style={{ fontFamily: 'var(--font-outfit)' }}>Recent Feedback</h2>
+                        <div className="space-y-3">
+                            {recentFeedback.map((f) => (
+                                <div key={f.id} className="bg-gray-50 rounded-xl p-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="w-10 h-10 bg-secondary rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
+                                            {(f.tutor?.name || 'T').charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="font-semibold text-gray-900 text-sm">
+                                                    {f.tutor?.name || 'Tutor'} <span className="text-gray-400 font-normal">({f.subject})</span>
+                                                    {f.student?.name ? <span className="text-gray-400 font-normal"> • {f.student.name}</span> : null}
+                                                </p>
+                                                <span className="text-xs text-gray-500">
+                                                    {new Date(f.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-gray-600">&ldquo;{f.feedback}&rdquo;</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Each child's progress */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

@@ -7,6 +7,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
     decline: ['pending'],
     cancel: ['pending', 'accepted'],
     complete: ['accepted'],
+    feedback: ['completed'],
 };
 
 // GET /api/bookings/[id] — one booking for the student, their parent, or the tutor
@@ -99,7 +100,7 @@ export async function PATCH(
         const action = body?.action;
         if (!action || !ALLOWED_TRANSITIONS[action]) {
             return NextResponse.json(
-                { error: 'Invalid action. Use accept, decline, cancel, or complete.' },
+                { error: 'Invalid action. Use accept, decline, cancel, complete, or feedback.' },
                 { status: 400 }
             );
         }
@@ -143,7 +144,7 @@ export async function PATCH(
             }
         }
 
-        if (['accept', 'decline', 'complete'].includes(action) && !isTutor) {
+        if (['accept', 'decline', 'complete', 'feedback'].includes(action) && !isTutor) {
             return NextResponse.json({ error: 'Only the tutor can do this' }, { status: 403 });
         }
         if (action === 'cancel' && !isStudent && !isParentOfChild) {
@@ -155,6 +156,28 @@ export async function PATCH(
                 { error: `Cannot ${action} a booking that is ${booking.status}` },
                 { status: 400 }
             );
+        }
+
+        // Tutor feedback on a completed lesson
+        if (action === 'feedback') {
+            const note = (body?.feedback || '').toString().trim();
+            if (!note || note.length > 1000) {
+                return NextResponse.json({ error: 'Feedback must be 1-1000 characters' }, { status: 400 });
+            }
+            const { data: updatedFeedback, error: feedbackError } = await supabaseAdmin
+                .from('sessions')
+                .update({ feedback: note })
+                .eq('id', id)
+                .select('id, feedback')
+                .single();
+            if (feedbackError) {
+                if (/column .* does not exist/i.test(feedbackError.message || '')) {
+                    return NextResponse.json({ error: 'Feedback needs migration 014 to be run first.' }, { status: 501 });
+                }
+                console.error('Error saving feedback:', feedbackError);
+                return NextResponse.json({ error: 'Could not save feedback' }, { status: 500 });
+            }
+            return NextResponse.json({ booking: updatedFeedback });
         }
 
         const newStatus = action === 'accept' ? 'accepted'

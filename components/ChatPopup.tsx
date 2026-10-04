@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { X, Send, Loader2, MessageCircle } from 'lucide-react';
+import { X, Send, Loader2, MessageCircle, FileText, Download } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthProvider';
+import { supabase } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 import { SignInModal } from '@/components/SignInModal';
 
 interface ChatMessage {
@@ -10,6 +12,9 @@ interface ChatMessage {
     sender_id: string;
     body: string;
     created_at: string;
+    attachment_url?: string | null;
+    attachment_name?: string | null;
+    attachment_type?: string | null;
 }
 
 interface ChatPopupProps {
@@ -40,6 +45,8 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
     const [loading, setLoading] = useState(false);
     const [sending, setSending] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const hasLoadedRef = useRef(false);
 
@@ -98,20 +105,19 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
 
     if (!isOpen) return null;
 
-    const send = async () => {
+    const send = async (attachment?: { url: string; name: string; type: string }) => {
         const text = input.trim();
-        if (!text || sending) return;
+        if ((!text && !attachment) || sending) return;
         setSending(true);
         try {
+            const base = conversationId ? { conversationId }
+                : withAdmin ? { withAdmin: true }
+                : userId ? { userId }
+                : { tutorId };
             const res = await fetch('/api/messages', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(
-                    conversationId ? { conversationId, body: text }
-                    : withAdmin ? { withAdmin: true, body: text }
-                    : userId ? { userId, body: text }
-                    : { tutorId, body: text }
-                ),
+                body: JSON.stringify({ ...base, body: text, ...(attachment ? { attachment } : {}) }),
             });
             const data = await res.json();
             if (!res.ok) {
@@ -125,6 +131,33 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
             setError('Could not reach the chat service.');
         } finally {
             setSending(false);
+        }
+    };
+
+    // File sharing: upload to the chat-attachments bucket, then send the link.
+    const handleFilePicked = async (file: File | null | undefined) => {
+        if (!file || uploading) return;
+        if (file.size > 10 * 1024 * 1024) {
+            toast.error('Files are limited to 10 MB.');
+            return;
+        }
+        setUploading(true);
+        try {
+            const path = `${user?.id || 'anon'}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_')}`;
+            const { error: upErr } = await supabase.storage
+                .from('chat-attachments')
+                .upload(path, file);
+            if (upErr) {
+                toast.error('File sharing is not enabled yet (run migration 014).');
+                return;
+            }
+            const { data: pub } = supabase.storage.from('chat-attachments').getPublicUrl(path);
+            await send({ url: pub.publicUrl, name: file.name, type: file.type || 'application/octet-stream' });
+        } catch {
+            toast.error('Could not upload the file.');
+        } finally {
+            setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -199,7 +232,18 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
                             return mine ? (
                                 <div key={m.id} className="flex flex-col items-end">
                                     <div className="bg-primary text-white rounded-3xl rounded-tr-md px-5 py-4 max-w-[85%]">
-                                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
+                                        {m.attachment_url && (
+                                            m.attachment_type?.startsWith('image/') ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={m.attachment_url} alt={m.attachment_name || 'attachment'} className="rounded-2xl mb-2 max-h-52 w-auto" />
+                                            ) : (
+                                                <a href={m.attachment_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white/15 rounded-xl px-3 py-2 mb-2 text-sm font-medium hover:bg-white/25 transition-colors">
+                                                    <FileText className="w-4 h-4" /> <span className="truncate max-w-[180px]">{m.attachment_name || 'Attachment'}</span>
+                                                    <Download className="w-4 h-4" />
+                                                </a>
+                                            )
+                                        )}
+                                        {m.body && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>}
                                     </div>
                                     <div className="flex items-center gap-1 mt-1 mr-2">
                                         <span className="text-xs text-gray-400">{time(m.created_at)}</span>
@@ -214,7 +258,18 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
                             ) : (
                                 <div key={m.id} className="flex flex-col items-start">
                                     <div className="bg-gray-100 text-gray-900 rounded-3xl rounded-tl-md px-5 py-4 max-w-[85%]">
-                                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>
+                                        {m.attachment_url && (
+                                            m.attachment_type?.startsWith('image/') ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img src={m.attachment_url} alt={m.attachment_name || 'attachment'} className="rounded-2xl mb-2 max-h-52 w-auto" />
+                                            ) : (
+                                                <a href={m.attachment_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 mb-2 text-sm font-medium hover:bg-gray-50 transition-colors border border-gray-200">
+                                                    <FileText className="w-4 h-4" /> <span className="truncate max-w-[180px]">{m.attachment_name || 'Attachment'}</span>
+                                                    <Download className="w-4 h-4" />
+                                                </a>
+                                            )
+                                        )}
+                                        {m.body && <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{m.body}</p>}
                                     </div>
                                     <span className="text-xs text-gray-400 mt-1 ml-2">{time(m.created_at)}</span>
                                 </div>
@@ -228,25 +283,37 @@ export function ChatPopup({ isOpen, onClose, tutorId, conversationId, userId, wi
                 <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
                     {user ? (
                         <div className="flex items-center gap-3">
-                            <button
-                                type="button"
-                                title="File sharing coming soon"
-                                className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                            </button>
+                            <>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    className="hidden"
+                                    onChange={(e) => handleFilePicked(e.target.files?.[0])}
+                                />
+                                <button
+                                    type="button"
+                                    title="Share a file (images, PDFs, assignments — up to 10 MB)"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploading}
+                                    className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-primary transition-colors"
+                                >
+                                    {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                    )}
+                                </button>
+                            </>
                             <input
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
-                                placeholder="Type a message..."
+                                placeholder="Type a message or tap + to share a file..."
                                 maxLength={2000}
                                 className="flex-1 bg-white border border-gray-200 rounded-full px-5 py-3 text-sm outline-none focus:border-primary transition-colors"
                             />
                             <button
-                                onClick={send}
+                                onClick={() => send()}
                                 disabled={sending || !input.trim()}
                                 className="w-12 h-12 bg-primary rounded-full flex items-center justify-center hover:bg-primary/90 disabled:opacity-50 transition-colors flex-shrink-0"
                                 aria-label="Send message"

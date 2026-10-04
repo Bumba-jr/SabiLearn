@@ -24,6 +24,7 @@ interface Booking {
     amount: number | null;
     payment_status: string;
     notes: string | null;
+    feedback?: string | null;
     student?: { id: string; name: string; email: string } | null;
     tutor?: { id: string; name: string } | null;
 }
@@ -69,9 +70,38 @@ export default function TutorDashboardPage() {
     const [instantLoading, setInstantLoading] = useState(false);
     const [adminRequests, setAdminRequests] = useState<any[]>([]);
     const [showAdminChat, setShowAdminChat] = useState(false);
+    const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
+    const [feedbackText, setFeedbackText] = useState('');
+    const [savingFeedback, setSavingFeedback] = useState(false);
     const [rateEditing, setRateEditing] = useState(false);
     const [rateInput, setRateInput] = useState('');
     const [savingRate, setSavingRate] = useState(false);
+
+    const saveFeedback = async (bookingId: string) => {
+        const note = feedbackText.trim();
+        if (!note) { toast.error('Write a short note first.'); return; }
+        setSavingFeedback(true);
+        try {
+            const res = await fetch(`/api/bookings/${bookingId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ action: 'feedback', feedback: note }),
+            });
+            const data = await res.json();
+            if (!res.ok) { toast.error(data.error || 'Could not save feedback.'); return; }
+            toast.success('Feedback sent — the parents can now see it on their dashboard.');
+            setEditingFeedbackId(null);
+            setFeedbackText('');
+            loadDashboard();
+        } catch {
+            toast.error('Could not reach the server.');
+        } finally {
+            setSavingFeedback(false);
+        }
+    };
 
     const saveRate = async () => {
         const rate = Number(rateInput);
@@ -257,7 +287,7 @@ export default function TutorDashboardPage() {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
                 <div className="flex-1 flex items-center justify-center">
-                    <Loader2 className="w-10 h-10 animate-spin text-green-600" />
+                    <Loader2 className="w-10 h-10 animate-spin text-primary" />
                 </div>
             </div>
         );
@@ -270,7 +300,7 @@ export default function TutorDashboardPage() {
                     <div className="bg-white rounded-2xl p-10 border border-gray-200 text-center max-w-md">
                         <h2 className="text-xl font-bold text-gray-900 mb-2">Finish your tutor profile</h2>
                         <p className="text-gray-500 text-sm mb-6">Your tutor dashboard unlocks once your application is complete.</p>
-                        <button onClick={() => router.push('/onboarding/tutor')} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold">
+                        <button onClick={() => router.push('/onboarding/tutor')} className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-semibold">
                             Continue Onboarding
                         </button>
                     </div>
@@ -325,6 +355,57 @@ export default function TutorDashboardPage() {
                         Start Class
                     </button>
                     <p className="text-[11px] text-gray-400 mt-1.5 text-center">Opens your live lesson room — the student and parents see it instantly.</p>
+                </div>
+            )}
+            {b.status === 'completed' && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    {editingFeedbackId === b.id ? (
+                        <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Feedback for the parents</label>
+                            <textarea
+                                rows={3}
+                                maxLength={1000}
+                                value={feedbackText}
+                                onChange={(e) => setFeedbackText(e.target.value)}
+                                placeholder='e.g. "Emeka grasped quadratic equations well today. We will focus on factoring next session."'
+                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+                            />
+                            <div className="flex gap-2 mt-2">
+                                <button
+                                    onClick={() => saveFeedback(b.id)}
+                                    disabled={savingFeedback || !feedbackText.trim()}
+                                    className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-semibold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    {savingFeedback ? <Loader2 className="w-4 h-4 animate-spin" /> : <Star className="w-4 h-4" />}
+                                    Save feedback
+                                </button>
+                                <button
+                                    onClick={() => { setEditingFeedbackId(null); setFeedbackText(''); }}
+                                    className="px-4 py-2 rounded-lg text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    ) : b.feedback ? (
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                            <p className="text-xs font-semibold text-emerald-700 mb-1">Your feedback</p>
+                            <p className="text-sm text-gray-600">&ldquo;{b.feedback}&rdquo;</p>
+                            <button
+                                onClick={() => { setEditingFeedbackId(b.id); setFeedbackText(b.feedback || ''); }}
+                                className="text-xs font-semibold text-emerald-700 hover:underline mt-1.5"
+                            >
+                                Edit
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={() => { setEditingFeedbackId(b.id); setFeedbackText(''); }}
+                            className="w-full border border-dashed border-gray-300 hover:border-primary hover:text-primary text-gray-400 font-medium py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 transition-colors"
+                        >
+                            <Star className="w-4 h-4" /> Leave feedback for the parents
+                        </button>
+                    )}
                 </div>
             )}
             {actions === 'request' && (
@@ -411,7 +492,7 @@ export default function TutorDashboardPage() {
                     </div>
                     <div className="flex items-center gap-4">
                         <SignOutButton />
-                        <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-green-700 font-semibold hover:underline">
+                        <button onClick={() => router.push(`/tutor/${tutor.id}`)} className="text-sm text-primary font-semibold hover:underline">
                             View public profile →
                         </button>
                     </div>
@@ -608,7 +689,7 @@ export default function TutorDashboardPage() {
                             <button
                                 key={c.id}
                                 onClick={() => setActiveChat({ id: c.id, name: c.otherName, avatar: c.otherAvatar })}
-                                className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3 text-left hover:border-green-300 transition-colors"
+                                className="w-full bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3 text-left hover:border-primary/40 transition-colors"
                             >
                                 {c.otherAvatar ? (
                                     // eslint-disable-next-line @next/next/no-img-element
@@ -624,7 +705,7 @@ export default function TutorDashboardPage() {
                                 </div>
                                 <div className="text-right">
                                     {c.unread > 0 && (
-                                        <span className="bg-green-600 text-white text-xs font-bold rounded-full px-2 py-0.5">{c.unread}</span>
+                                        <span className="bg-primary text-white text-xs font-bold rounded-full px-2 py-0.5">{c.unread}</span>
                                     )}
                                     <p className="text-[10px] text-gray-400 mt-1">
                                         {c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''}
@@ -646,7 +727,7 @@ export default function TutorDashboardPage() {
                             <button
                                 onClick={saveAvailability}
                                 disabled={!availabilityDirty || savingAvailability}
-                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                                className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2 transition-colors"
                             >
                                 {savingAvailability ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                                 Save
@@ -666,7 +747,7 @@ export default function TutorDashboardPage() {
                                                     setAvailability((prev) => ({ ...prev, [key]: e.target.checked ? [{ from: '16:00', to: '19:00' }] : [] }));
                                                     setAvailabilityDirty(true);
                                                 }}
-                                                className="w-4 h-4 accent-green-600"
+                                                className="w-4 h-4 accent-primary"
                                             />
                                             <span className="text-sm font-medium text-gray-700">{label}</span>
                                         </label>
@@ -715,7 +796,7 @@ export default function TutorDashboardPage() {
                                                         setAvailability((prev) => ({ ...prev, [key]: [...ranges, { from: '16:00', to: '19:00' }] }));
                                                         setAvailabilityDirty(true);
                                                     }}
-                                                    className="text-green-600 hover:text-green-700 p-1 flex items-center gap-1 text-sm font-medium"
+                                                    className="text-primary hover:text-primary/80 p-1 flex items-center gap-1 text-sm font-medium"
                                                 >
                                                     <Plus className="w-4 h-4" /> Add range
                                                 </button>
@@ -761,7 +842,7 @@ export default function TutorDashboardPage() {
                         </div>
                         <p className="text-sm text-gray-500 mb-4">Pick a student — they'll see the class is live and can join immediately.</p>
                         {instantLoading ? (
-                            <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-green-600" /></div>
+                            <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                         ) : instantStudents.length === 0 ? (
                             <div className="py-8 text-center text-gray-400 text-sm">No students yet — students you've booked with appear here.</div>
                         ) : (
@@ -771,19 +852,19 @@ export default function TutorDashboardPage() {
                                         key={st.id}
                                         onClick={() => startInstantClass(st.id)}
                                         disabled={startingClass === st.id}
-                                        className="w-full bg-gray-50 hover:bg-green-50 border border-gray-200 rounded-xl p-3 flex items-center gap-3 text-left transition-colors disabled:opacity-60"
+                                        className="w-full bg-gray-50 hover:bg-primary/10 border border-gray-200 rounded-xl p-3 flex items-center gap-3 text-left transition-colors disabled:opacity-60"
                                     >
                                         {st.avatar_url ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img src={st.avatar_url} alt={st.name} className="w-10 h-10 rounded-full object-cover" />
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm">
+                                            <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm">
                                                 {st.name?.charAt(0).toUpperCase()}
                                             </div>
                                         )}
                                         <span className="flex-1 font-semibold text-gray-900 text-sm">{st.name}</span>
-                                        {startingClass === st.id && <Loader2 className="w-4 h-4 animate-spin text-green-600" />}
-                                        <Radio className="w-4 h-4 text-green-600" />
+                                        {startingClass === st.id && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+                                        <Radio className="w-4 h-4 text-primary" />
                                     </button>
                                 ))}
                             </div>

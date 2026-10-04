@@ -26,6 +26,34 @@ async function getAuthUser() {
     return user;
 }
 
+// Attachment columns only exist after migration 014; fall back gracefully.
+const MSG_SELECT_FULL = 'id, sender_id, body, read_at, created_at, attachment_url, attachment_name, attachment_type';
+const MSG_SELECT_PLAIN = 'id, sender_id, body, read_at, created_at';
+
+async function fetchMessages(conversationId: string, senderExcluded?: string) {
+    let data: any[] | null = null;
+    let error: { message?: string } | null = null;
+    const res = await supabase
+        .from('messages')
+        .select(MSG_SELECT_FULL)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(200);
+    data = res.data as any[] | null;
+    error = res.error as { message?: string } | null;
+    if (error && /column .* does not exist/i.test(error.message || '')) {
+        const res2 = await supabase
+            .from('messages')
+            .select(MSG_SELECT_PLAIN)
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true })
+            .limit(200);
+        data = (res2.data as any[] | null) || [];
+        error = (res2.error as { message?: string } | null);
+    }
+    return { data: data || [], error };
+}
+
 function missingTable(error: { message?: string } | null): boolean {
     return /relation .* does not exist|Could not find the table/i.test(error?.message || '');
 }
@@ -82,12 +110,7 @@ export async function GET(req: Request) {
                 convo = created;
             }
 
-            const { data: messages } = await supabase
-                .from('messages')
-                .select('id, sender_id, body, read_at, created_at')
-                .eq('conversation_id', (convo as any).id)
-                .order('created_at', { ascending: true })
-                .limit(200);
+            const { data: messages } = await fetchMessages((convo as any).id);
 
             await supabase
                 .from('messages')
@@ -114,12 +137,7 @@ export async function GET(req: Request) {
             }
 
             const otherId = convo.participant_a === user.id ? convo.participant_b : convo.participant_a;
-            const { data: messages } = await supabase
-                .from('messages')
-                .select('id, sender_id, body, read_at, created_at')
-                .eq('conversation_id', convo.id)
-                .order('created_at', { ascending: true })
-                .limit(200);
+            const { data: messages } = await fetchMessages(convo.id);
 
             await supabase
                 .from('messages')
@@ -292,7 +310,16 @@ export async function POST(req: Request) {
 
         const payload = await req.json();
         const text = (payload?.body || '').toString().trim();
-        if (!text) {
+
+        // Optional attachment (uploaded to the chat-attachments bucket first)
+        const att = payload?.attachment || null;
+        const attachmentUrl = att?.url ? String(att.url) : null;
+        const attachmentName = att?.name ? String(att.name).slice(0, 200) : null;
+        const attachmentType = att?.type ? String(att.type).slice(0, 100) : null;
+        if (attachmentUrl && !/^https:\/\//i.test(attachmentUrl)) {
+            return NextResponse.json({ error: 'Invalid attachment link' }, { status: 400 });
+        }
+        if (!text && !attachmentUrl) {
             return NextResponse.json({ error: 'Message cannot be empty' }, { status: 400 });
         }
         if (text.length > 2000) {
@@ -329,11 +356,28 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
         }
 
-        const { data: message, error } = await supabase
+        const insertRow: Record<string, unknown> = {
+            conversation_id: conversationId,
+            sender_id: user.id,
+            body: text,
+        };
+        let { data: message, error } = await supabase
             .from('messages')
-            .insert({ conversation_id: conversationId, sender_id: user.id, body: text })
-            .select('id, sender_id, body, created_at')
+            .insert(attachmentUrl
+                ? { ...insertRow, attachment_url: attachmentUrl, attachment_name: attachmentName, attachment_type: attachmentType }
+                : insertRow)
+            .select(MSG_SELECT_FULL)
             .single();
+
+        // Migration 014 not applied yet — retry without attachment fields so
+        // the text part of the message still goes through.
+        if (error && /column .* does not exist/i.test(error.message || '')) {
+            ({ data: message, error } = await supabase
+                .from('messages')
+                .insert(insertRow)
+                .select(MSG_SELECT_PLAIN)
+                .single());
+        }
 
         if (error) {
             console.error('Message insert error:', error.message);

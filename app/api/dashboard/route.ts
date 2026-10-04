@@ -91,6 +91,7 @@ export async function GET() {
         // ---- Student context ----
         let student = null;
         let myBookings: unknown[] = [];
+        let recentFeedback: unknown[] = [];
 
         if (role === 'student' || role === 'parent') {
             const { data: studentRow } = await supabase
@@ -174,6 +175,19 @@ export async function GET() {
                     myBookings = sessions;
                 }
 
+                // Recent feedback notes tutors left on completed lessons
+                if (kids.length > 0) {
+                    const ids = kids.map((c) => c.id);
+                    const { data: frows, error: ferr } = await supabase
+                        .from('sessions')
+                        .select('id, feedback, subject, created_at, student_id, student:students(id, name), tutor:tutors(id, name, avatar_url)')
+                        .in('student_id', ids)
+                        .not('feedback', 'is', null)
+                        .order('created_at', { ascending: false })
+                        .limit(5);
+                    if (!ferr) recentFeedback = frows || [];
+                }
+
                 const now = new Date();
                 children = kids.map((child) => {
                     const mine = sessions.filter((s) => s.student_id === child.id);
@@ -244,6 +258,7 @@ export async function GET() {
             upcoming,
             past,
             myBookings,
+            recentFeedback,
             stats: {
                 pendingCount: incoming.length,
                 upcomingCount: upcoming.length,

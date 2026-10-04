@@ -213,7 +213,7 @@ export default function StudentDashboardPage() {
         return (
             <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#F9F8F6' }}>
                 <div className="flex-1 flex items-center justify-center">
-                    <Loader2 className="w-10 h-10 animate-spin text-green-600" />
+                    <Loader2 className="w-10 h-10 animate-spin text-primary" />
                 </div>
             </div>
         );
@@ -229,7 +229,7 @@ export default function StudentDashboardPage() {
                         <div className="flex items-center gap-2 mb-1">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                                 b.status === 'pending' ? 'bg-orange-50 text-orange-600' :
-                                b.status === 'accepted' ? 'bg-green-50 text-green-600' :
+                                b.status === 'accepted' ? 'bg-green-50 text-primary' :
                                 b.status === 'completed' ? 'bg-blue-50 text-blue-600' :
                                 'bg-gray-100 text-gray-500'
                             }`}>{b.status}</span>
@@ -291,7 +291,7 @@ export default function StudentDashboardPage() {
                                 <button
                                     onClick={() => { navigator.clipboard.writeText(myCode); toast.success(`Code ${myCode} copied.`); }}
                                     title="Click to copy"
-                                    className="text-xs font-mono font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-md hover:bg-green-100 transition-colors"
+                                    className="text-xs font-mono font-semibold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-md hover:bg-primary/20 transition-colors"
                                 >
                                     My code: {myCode} ⧉
                                 </button>
@@ -319,7 +319,7 @@ export default function StudentDashboardPage() {
                         <button
                             onClick={claimFamilyCode}
                             disabled={!familyCodeInput.trim() || linkingCode}
-                            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
+                            className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors"
                         >
                             {linkingCode ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Link'}
                         </button>
@@ -331,7 +331,7 @@ export default function StudentDashboardPage() {
                     {[
                         { label: 'Upcoming Sessions', value: upcoming.length, icon: Calendar, color: 'text-blue-500 bg-blue-50' },
                         { label: 'Awaiting Confirmation', value: requests.length, icon: Clock, color: 'text-orange-500 bg-orange-50' },
-                        { label: 'Completed', value: history.filter((b) => b.status === 'completed').length, icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
+                        { label: 'Completed', value: history.filter((b) => b.status === 'completed').length, icon: CheckCircle2, color: 'text-primary bg-green-50' },
                         { label: 'Favorite Tutors', value: favorites.length, icon: Heart, color: 'text-pink-500 bg-pink-50' },
                     ].map(({ label, value, icon: Icon, color }) => (
                         <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
@@ -410,7 +410,7 @@ export default function StudentDashboardPage() {
                             key={key}
                             onClick={() => setTab(key)}
                             className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
-                                tab === key ? 'bg-green-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                                tab === key ? 'bg-primary/10 text-primary' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                             }`}
                         >
                             {label}
