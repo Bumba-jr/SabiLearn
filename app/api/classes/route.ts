@@ -30,6 +30,31 @@ function missingTable(error: { message?: string } | null): boolean {
     return /relation .* does not exist|Could not find the table/i.test(error?.message || '');
 }
 
+
+// Classes whose booked time is over (started_at + duration + 2 min grace)
+// are finalized server-side, so a tutor closing their tab can never leave a
+// class stuck "live" with banners showing forever.
+const STALE_GRACE_MS = 2 * 60_000;
+
+async function finalizeStaleClasses() {
+    const cutoff = Date.now() - 0; // now
+    const { data: stale } = await supabase
+        .from('classes')
+        .select('id, started_at, session:sessions!inner(duration_minutes)')
+        .eq('status', 'live');
+    for (const c of stale || []) {
+        const session = Array.isArray(c.session) ? c.session[0] : c.session;
+        const duration = session?.duration_minutes || 60;
+        const endMs = new Date(c.started_at).getTime() + duration * 60_000 + STALE_GRACE_MS;
+        if (endMs < Date.now()) {
+            await supabase
+                .from('classes')
+                .update({ status: 'ended', ended_at: new Date(Math.min(endMs - STALE_GRACE_MS, Date.now())).toISOString() })
+                .eq('id', c.id);
+        }
+    }
+}
+
 // GET /api/classes — live classes relevant to the caller
 // (as tutor: their classes; as parent: their children's classes; as student: their own)
 export async function GET() {
@@ -67,6 +92,9 @@ export async function GET() {
             .select('id')
             .eq('auth_user_id', user.id)
             .maybeSingle();
+
+        // Close any classes whose booked time ran out before filtering.
+        await finalizeStaleClasses();
 
         // Live classes relevant to the caller. PostgREST can't filter on
         // embedded-resource columns inside .or(), so fetch live classes and

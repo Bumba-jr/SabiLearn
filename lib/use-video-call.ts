@@ -95,10 +95,22 @@ export function useVideoCall({ classId, isTutor, enabled }: UseVideoCallOptions)
                 attachStreams();
 
                 // 2. Peer connection
+                // STUN alone cannot connect peers behind mobile-carrier or
+                // office NATs — the Open Relay community TURN servers relay
+                // media when a direct path doesn't exist.
                 const pc = new RTCPeerConnection({
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:global.stun.twilio.com:3478' },
+                        {
+                            urls: [
+                                'turn:openrelay.metered.ca:80',
+                                'turn:openrelay.metered.ca:443',
+                                'turn:openrelay.metered.ca:443?transport=tcp',
+                            ],
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject',
+                        },
                     ],
                 });
                 pcRef.current = pc;

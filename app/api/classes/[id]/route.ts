@@ -26,6 +26,31 @@ async function getAuthUser() {
     return user;
 }
 
+
+// Classes whose booked time is over (started_at + duration + 2 min grace)
+// are finalized server-side, so a tutor closing their tab can never leave a
+// class stuck "live" with banners showing forever.
+const STALE_GRACE_MS = 2 * 60_000;
+
+async function finalizeStaleClasses() {
+    const cutoff = Date.now() - 0; // now
+    const { data: stale } = await supabase
+        .from('classes')
+        .select('id, started_at, session:sessions!inner(duration_minutes)')
+        .eq('status', 'live');
+    for (const c of stale || []) {
+        const session = Array.isArray(c.session) ? c.session[0] : c.session;
+        const duration = session?.duration_minutes || 60;
+        const endMs = new Date(c.started_at).getTime() + duration * 60_000 + STALE_GRACE_MS;
+        if (endMs < Date.now()) {
+            await supabase
+                .from('classes')
+                .update({ status: 'ended', ended_at: new Date(Math.min(endMs - STALE_GRACE_MS, Date.now())).toISOString() })
+                .eq('id', c.id);
+        }
+    }
+}
+
 // GET /api/classes/[id] — class details + attendance (participants only)
 export async function GET(
     req: Request,
@@ -38,6 +63,10 @@ export async function GET(
         }
         const resolved = await Promise.resolve(params);
         const { id } = resolved;
+
+        // If this class's booked time ran out, finalize it first so the room
+        // shows as ended even when no one pressed End Class.
+        await finalizeStaleClasses();
 
         const { data: klass } = await supabase
             .from('classes')
@@ -104,6 +133,10 @@ export async function POST(
         }
         const resolved = await Promise.resolve(params);
         const { id } = resolved;
+
+        // If this class's booked time ran out, finalize it first so the room
+        // shows as ended even when no one pressed End Class.
+        await finalizeStaleClasses();
 
         const { data: klass } = await supabase
             .from('classes')
@@ -175,6 +208,10 @@ export async function DELETE(
         }
         const resolved = await Promise.resolve(params);
         const { id } = resolved;
+
+        // If this class's booked time ran out, finalize it first so the room
+        // shows as ended even when no one pressed End Class.
+        await finalizeStaleClasses();
 
         const { data: klass } = await supabase
             .from('classes')
