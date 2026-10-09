@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useVideoCall } from '@/lib/use-video-call';
 import { ClassroomBoard } from '@/components/ClassroomBoard';
+import { supabase } from '@/lib/supabase/client';
 
 interface ClassDetail {
     id: string;
@@ -48,7 +49,44 @@ export default function ClassroomPage() {
     const [now, setNow] = useState(Date.now());
     const [ending, setEnding] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [theater, setTheater] = useState(false);
     const [showBoard, setShowBoard] = useState(false);
+    const showBoardRef = useRef(false);
+    const boardSyncRef = useRef<any>(null);
+
+    // Board open/close is shared: one person opens it, everyone sees it open —
+    // in real time, including people who join later (request/reply).
+    useEffect(() => {
+        const channel = supabase.channel(`class-room-${classId}`);
+        boardSyncRef.current = channel;
+        channel
+            .on('broadcast', { event: 'board-visibility' }, ({ payload }: any) => {
+                if (typeof payload?.open === 'boolean') setShowBoard(payload.open);
+            })
+            .on('broadcast', { event: 'board-visibility-request' }, () => {
+                if (showBoardRef.current) {
+                    channel.send({ type: 'broadcast', event: 'board-visibility', payload: { open: true } });
+                }
+            })
+            .subscribe((status: string) => {
+                if (status === 'SUBSCRIBED') {
+                    channel.send({ type: 'broadcast', event: 'board-visibility-request', payload: {} });
+                }
+            });
+        return () => {
+            channel.unsubscribe();
+            boardSyncRef.current = null;
+        };
+    }, [classId]);
+
+    const toggleBoard = () => {
+        setShowBoard((prev) => {
+            const next = !prev;
+            showBoardRef.current = next;
+            boardSyncRef.current?.send({ type: 'broadcast', event: 'board-visibility', payload: { open: next } });
+            return next;
+        });
+    };
     const videoBoxRef = useRef<HTMLDivElement | null>(null);
     const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -107,24 +145,39 @@ export default function ClassroomPage() {
 
     const toggleFullscreen = () => {
         const box = videoBoxRef.current as any;
-        if (!box) return;
         const doc = document as any;
-        const isFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
-        if (!isFs) {
-            const req = box.requestFullscreen || box.webkitRequestFullscreen || box.webkitRequestFullScreen;
-            if (req) {
-                const result = req.call(box);
-                if (result && typeof result.catch === 'function') {
-                    result.catch(() => toast.error('Fullscreen was blocked by the browser.'));
-                }
-            } else {
-                toast.error('Fullscreen is not supported in this browser.');
-            }
-        } else {
+        const isNativeFs = !!(doc.fullscreenElement || doc.webkitFullscreenElement);
+        if (isNativeFs) {
             const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.webkitCancelFullScreen;
             exit?.call(document);
+            setTheater(false);
+            return;
+        }
+        // Theater mode is the fallback: works in every browser (webviews that
+        // block the Fullscreen API included) by expanding the video in-page.
+        setTheater((prev) => !prev);
+        if (box && !theater) {
+            try {
+                const req = box.requestFullscreen || box.webkitRequestFullscreen || box.webkitRequestFullScreen;
+                if (req) {
+                    const result = req.call(box);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(() => setTheater(true));
+                    }
+                }
+            } catch {
+                setTheater(true);
+            }
         }
     };
+
+    // Esc exits theater mode
+    useEffect(() => {
+        if (!theater) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTheater(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [theater]);
 
     useEffect(() => {
         const doc = document as any;
@@ -362,15 +415,23 @@ export default function ClassroomPage() {
                             <p className="text-sm text-red-300 bg-red-500/10 rounded-xl p-3">{call.mediaError}</p>
                         ) : (
                             <>
-                                <div ref={videoBoxRef} className="relative bg-black rounded-2xl overflow-hidden aspect-video mb-3">
+                                <div
+                                    ref={videoBoxRef}
+                                    className={`relative bg-black overflow-hidden aspect-video mb-3 ${theater ? 'fixed inset-0 z-[200] rounded-none' : 'rounded-2xl'}`}
+                                >
                                     <video ref={call.remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
                                     <button
                                         onClick={toggleFullscreen}
-                                        title={isFullscreen ? 'Exit fullscreen' : 'Open in fullscreen'}
-                                        className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
+                                        title={(isFullscreen || theater) ? 'Exit fullscreen (Esc)' : 'Open in fullscreen'}
+                                        className="absolute top-2 right-2 z-[210] bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
                                     >
-                                        {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+                                        {(isFullscreen || theater) ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
                                     </button>
+                                    {theater && !isFullscreen && (
+                                        <span className="absolute top-2 left-2 z-[210] text-[10px] font-semibold text-white/80 bg-black/60 px-2 py-1 rounded">
+                                            Theater view — press Esc to exit
+                                        </span>
+                                    )}
                                     {call.status !== 'connected' && (
                                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400">
                                             <Loader2 className="w-8 h-8 animate-spin" />
@@ -465,7 +526,7 @@ export default function ClassroomPage() {
                 {/* Shared Board */}
                 <div className="mt-8">
                     <button
-                        onClick={() => setShowBoard((v) => !v)}
+                        onClick={toggleBoard}
                         className="w-full bg-white/10 hover:bg-white/20 border border-white/10 text-white font-semibold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors"
                     >
                         <PenLine className="w-5 h-5 text-green-400" />
